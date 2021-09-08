@@ -1,0 +1,132 @@
+name: pci
+about: Tools for accessing PCI devices and their configuration space
+args:
+  - verbose:
+      short: v
+      multiple: true
+      about: Be verbose (-vv or -vvv for higher verbosity)
+subcommands:
+  - list:
+      about: list all PCI devices
+      args:
+        - machine_readable:
+            short: m
+            multiple: true
+            takes_value: false
+            help: Produce machine-readable output (single -m for an obsolete format)
+        - tree:
+            short: t
+            help: Show bus tree
+        - kernel_drivers:
+            short: k
+            help: Show kernel drivers handling each device
+        - hexadecimal:
+            short: x
+            multiple: true
+            takes_value: false
+            help: Show hex-dump of the standard part of the config space
+        - bus_centric:
+            short: b
+            help: Bus-centric view (addresses and IRQ's as seen by the bus)
+        - domain_numbers:
+            short: D
+            help: Always show domain numbers
+        - bridge_path:
+            short: P
+            multiple: true
+            takes_value: false
+            help: Display bridge path in addition to bus and device number
+        - numeric:
+            short: n 
+            multiple: true
+            help: Show numeric ID's
+        - query_unknown:
+            short: q
+            multiple: true
+            takes_value: false
+            help: Query the PCI ID database for unknown ID's via DNS
+        - query_all:
+            short: Q
+            help: Query the PCI ID database for all ID's via DNS
+        - slots:
+            short: s
+            takes_value: true
+            value_name: "[[[[<domain>]:]<bus>]:][<slot>][.[<func>]]"
+            help: Show only devices in selected slots
+        - devices:
+            short: d 
+            multiple: true
+            value_name: "[<vendor>]:[<device>][:<class>]"
+            help: Show only devices with specified ID's
+        - pci_ids_file:
+            short: i
+            takes_value: true
+            value_name: file
+            default_value: /usr/share/hwdata/pci.ids
+            help: Use specified ID database instead of /usr/share/hwdata/pci.ids
+        - kernel_modules_file:
+            short: p
+            help: Look up kernel modules in a given file instead of default modules.pcimap 
+        - bus_mapping:
+            short: M
+            help: Enable `bus mapping' mode (dangerous; root only) 
+        - access_method:
+            short: A
+            takes_value: true
+            value_name: method
+            help: Use the specified PCI access method (see `-A help' for a list)
+        - access_parameter:
+            short: O
+            takes_value: true
+            value_name: "<par>=<val>"
+            help: Set PCI access parameter (see `-O help' for a list)
+        - access_debugging:
+            short: G
+            help: Enable PCI access debugging
+        - direct_access:
+            short: H
+            takes_value: true
+            value_name: mode
+            help: Use direct hardware access (<mode> = 1 or 2)
+        - from_dump_file:
+            short: F
+            takes_value: true
+            value_name: file
+            help: Read PCI configuration dump from a given file
+  - set:
+      about: configure PCI devices
+      args:
+        - force:
+            short: f
+            help: >
+              Tells setpci not to complain when there's nothing to do
+              (when no devices are selected).  This option is intended for use
+              in widely-distributed configuration scripts where it's uncertain
+              whether the device in question is present in the machine or not.
+
+#Usage: setpci [<options>] (<device>+ <reg>[=<values>]*)*
+#
+#General options:
+#-f		Don't complain if there's nothing to do
+#-v		Be verbose
+#-D		List changes, don't commit them
+#-r		Use raw access without bus scan if possible
+#--dumpregs	Dump all known register names and exit
+#
+#PCI access options:
+#-A <method>	Use the specified PCI access method (see `-A help' for a list)
+#-O <par>=<val>	Set PCI access parameter (see `-O help' for a list)
+#-G		Enable PCI access debugging
+#-H <mode>	Use direct hardware access (<mode> = 1 or 2)
+#
+#Setting commands:
+#<device>:	-s [[[<domain>]:][<bus>]:][<slot>][.[<func>]]
+#		-d [<vendor>]:[<device>]
+#<reg>:		<base>[+<offset>][.(B|W|L)][@<number>]
+#<base>:		<address>
+#		<named-register>
+#		[E]CAP_<capability-name>
+#		[E]CAP<capability-number>
+#<values>:	<value>[,<value>...]
+#<value>:	<hex>
+#		<hex>:<mask>
