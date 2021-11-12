@@ -1,0 +1,15 @@
+00:1f.3 Audio device: Intel Corporation Cannon Point-LP High Definition Audio Controller (rev 30) (prog-if 80)
+	Subsystem: ASUSTeK Computer Inc. Device 16a1
+	Flags: bus master, fast devsel, latency 32, IRQ 145
+	Memory at b4418000 (64-bit, non-prefetchable) [size=16K]
+	Memory at b4100000 (64-bit, non-prefetchable) [size=1M]
+	Capabilities: [50] Power Management version 3
+	Capabilities: [80] Vendor Specific Information: Len=14 <?>
+	Capabilities: [60] MSI: Enable+ Count=1/1 Maskable- 64bit+
+	Kernel driver in use: snd_hda_intel
+	Kernel modules: snd_hda_intel, snd_soc_skl, snd_sof_pci_intel_cnl
+00: 86 80 c8 9d 06 04 10 00 30 80 03 04 10 20 00 00
+10: 04 80 41 b4 00 00 00 00 00 00 00 00 00 00 00 00
+20: 04 00 10 b4 00 00 00 00 00 00 00 00 43 10 a1 16
+30: 00 00 00 00 50 00 00 00 00 00 00 00 ff 01 00 00
+

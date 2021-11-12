@@ -1,9 +1,6 @@
-use core::array;
-
 use serde::{Serialize, Deserialize,}; 
-use bitfield_layout::{BitFieldLayout, Layout, };
+use modular_bitfield::prelude::*;
 
-use super::View;
 
 
 /// Provides control over a device's ability to generate and respond to PCI cycles. Where the
@@ -11,35 +8,83 @@ use super::View;
 /// this register, the device is disconnected from the PCI bus for all accesses except
 /// Configuration Space access.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Command(pub u16);
+pub struct Command {
+    pub io_space: bool,
+    pub memory_space: bool,
+    pub bus_master: bool,
+    pub special_cycles: bool,
+    pub memory_write_and_invalidate_enable: bool,
+    pub vga_palette_snoop: bool,
+    pub parity_error_response: bool,
+    pub stepping: bool,
+    pub serr_enable: bool,
+    pub fast_back_to_back_enable: bool,
+    pub interrupt_disable: bool,
+    pub reserved: u8,
+}
+
+#[bitfield(bits = 16)]
+#[repr(u16)]
+pub struct CommandProto {
+    io_space: bool,
+    memory_space: bool,
+    bus_master: bool,
+    special_cycles: bool,
+    memory_write_and_invalidate_enable: bool,
+    vga_palette_snoop: bool,
+    parity_error_response: bool,
+    stepping: bool,
+    serr_enable: bool,
+    fast_back_to_back_enable: bool,
+    interrupt_disable: bool,
+    reserved: B5,
+}
 
 
-impl Command {
-    pub const LAYOUT: [View<'static>; 16] = [
-        View { name: "I/O Space", desc: "Can respond to I/O Space accesses", lspci: "I/O" },
-        View { name: "Memory Space", desc: "Can respond to Memory Space accesses", lspci: "Mem" },
-        View { name: "Bus Master", desc: "Can behave as a bus master", lspci: "BusMaster" },
-        View { name: "Special Cycles", desc: "Can monitor Special Cycle operations", lspci: "SpecCycle" },
-        View { name: "Memory Write and Invalidate Enable", desc: "Can generate the Memory Write and Invalidate command", lspci: "MemWINV" },
-        View { name: "VGA Palette Snoop", desc: "Does not respond to palette register writes and will snoop the data", lspci: "VGASnoop" },
-        View { name: "Parity Error Response", desc: "Will take its normal action when a parity error is detected", lspci: "ParErr" },
-        View { name: "Stepping", desc: "As of revision 3.0 of the PCI local bus specification this bit is hardwired to 0. In earlier versions of the specification this bit was used by devices and may have been hardwired to 0, 1, or implemented as a read/write bit.", lspci: "Stepping" },
-        View { name: "SERR# Enable", desc: "The SERR# driver is enabled", lspci: "SERR" },
-        View { name: "Fast Back-to-Back Enable", desc: "Indicates a device is allowed to generate fast back-to-back transactions", lspci: "FastB2B" },
-        View { name: "Interrupt Disable", desc: "The assertion of the devices INTx# signal is disabled", lspci: "DisINTx" },
-        View { name: "Reserved", desc: "Reserved", lspci: "Reserved" },
-        View { name: "Reserved", desc: "Reserved", lspci: "Reserved" },
-        View { name: "Reserved", desc: "Reserved", lspci: "Reserved" },
-        View { name: "Reserved", desc: "Reserved", lspci: "Reserved" },
-        View { name: "Reserved", desc: "Reserved", lspci: "Reserved" },
-    ];
+impl From<CommandProto> for Command {
+    fn from(proto: CommandProto) -> Self {
+        Self {
+            io_space: proto.io_space(),
+            memory_space: proto.memory_space(),
+            bus_master: proto.bus_master(),
+            special_cycles: proto.special_cycles(),
+            memory_write_and_invalidate_enable: proto.memory_write_and_invalidate_enable(),
+            vga_palette_snoop: proto.vga_palette_snoop(),
+            parity_error_response: proto.parity_error_response(),
+            stepping: proto.stepping(),
+            serr_enable: proto.serr_enable(),
+            fast_back_to_back_enable: proto.fast_back_to_back_enable(),
+            interrupt_disable: proto.interrupt_disable(),
+            reserved: proto.reserved(),
+        }
+    }
 }
-impl Layout for Command {
-    type Layout = array::IntoIter<View<'static>, 16>;
-    fn layout() -> Self::Layout { array::IntoIter::new(Self::LAYOUT) }
+impl From<u16> for Command {
+    fn from(word: u16) -> Self { CommandProto::from(word).into() }
 }
-impl BitFieldLayout for Command {
-    type Value = u16;
-    fn get(&self) -> Self::Value { self.0 }
-    fn set(&mut self, new: Self::Value) { self.0 = new; }
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use super::*;
+
+    #[test]
+    fn from_word() {
+        let result = 0xAAAA.into();
+        let sample = Command {
+            io_space: false,
+            memory_space: true,
+            bus_master: false,
+            special_cycles: true,
+            memory_write_and_invalidate_enable: false,
+            vga_palette_snoop: true,
+            parity_error_response: false,
+            stepping: true,
+            serr_enable: false,
+            fast_back_to_back_enable: true,
+            interrupt_disable: false,
+            reserved: 0b10101,
+        };
+        assert_eq!(sample, result);
+    }
 }

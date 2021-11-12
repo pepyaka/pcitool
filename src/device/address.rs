@@ -7,7 +7,6 @@ use core::{
 use thiserror::Error;
 
 
-
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct Address {
     /// DOMAIN/SEGMENT is primarily a PLATFORM level construct. Logically, DOMAIN is the most
@@ -24,7 +23,7 @@ pub struct Address {
     pub function: u8,
 }
 
-#[derive(Error, Debug, PartialEq, Eq, Clone)]
+#[derive(Error, Clone, Debug, PartialEq, Eq)]
 pub enum ParseAddressError {
     #[error("empty string")]
     Empty,
@@ -96,6 +95,8 @@ impl FromStr for Address {
         Ok(Self { domain, bus, device, function })
     }
 }
+
+
 
 #[cfg(test)]
 mod tests {

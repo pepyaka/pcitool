@@ -1,44 +1,134 @@
-use core::array;
-
 use serde::{Serialize, Deserialize,}; 
-use bitfield_layout::{BitFieldLayout, Layout, };
+use modular_bitfield::prelude::*;
+use displaydoc::Display as DisplayDoc;
 
-use super::View;
 
 
 /// The Status register is used to record status information for PCI bus related events. Devices
 /// may not need to implement all bits, depending on device functionality. Reserved bits should be
 /// read-only and return zero when read. 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Status(pub u16);
-
-impl Status {
-    pub const LAYOUT: [View<'static>; 16] = [
-        View { name: "Reserved", desc: "Reserved", lspci: "Reserved" },
-        View { name: "Reserved", desc: "Reserved", lspci: "Reserved" },
-        View { name: "Reserved", desc: "Reserved", lspci: "Reserved" },
-        View { name: "Interrupt Status", desc: "Represents the state of the device's INTx# signal", lspci: "INTx" },
-        View { name: "Capabilities List", desc: "Device implements the pointer for a New Capabilities Linked list", lspci: "Cap" },
-        View { name: "66 MHz Capable", desc: "Device is capable of running at 66 MHz", lspci: "66MHz" },
-        View { name: "User Definable Features", desc: "Support User Definable Features [obsolete]", lspci: "UDF" },
-        View { name: "Fast Back-to-Back Capable", desc: "Device can accept fast back-to-back transactions that are not from the same agent", lspci: "FastB2B" },
-        View { name: "Master Data Parity Error", desc: "The bus agent asserted PERR# on a read or observed an assertion of PERR# on a write", lspci: "ParErr" },
-        View { name: "DEVSEL Medium Timing", desc: "Represent the medium timing that a device will assert DEVSEL# for any bus command except Configuration Space read and write", lspci: "DEVSEL=medium" },
-        View { name: "DEVSEL Slow Timing", desc: "Represent the slow timing that a device will assert DEVSEL# for any bus command except Configuration Space read and write", lspci: "DEVSEL=slow" },
-        View { name: "Signalled Target Abort", desc: "Target device terminates a transaction with Target-Abort", lspci: ">TAbort" },
-        View { name: "Received Target Abort", desc: "Master device transaction is terminated with Target-Abort", lspci: "<TAbort" },
-        View { name: "Received Master Abort", desc: "Master device transaction (except for Special Cycle transactions) is terminated with Master-Abort", lspci: "<MAbort" },
-        View { name: "Signalled System Error", desc: "Device asserts SERR#", lspci: ">SERR" },
-        View { name: "Detected Parity Error", desc: "Device detects a parity error, even if parity error handling is disabled", lspci: "<PERR" },
-    ];
-}
-impl Layout for Status {
-    type Layout = array::IntoIter<View<'static>, 16>;
-    fn layout() -> Self::Layout { array::IntoIter::new(Self::LAYOUT) }
-}
-impl BitFieldLayout for Status {
-    type Value = u16;
-    fn get(&self) -> Self::Value { self.0 }
-    fn set(&mut self, new: Self::Value) { self.0 = new; }
+/// There are three types of Status Register:
+/// 1. Primary (identical for all device types)
+/// 2. Secondary PCI-to-PCI Bridge
+/// 3. Secondary CardBus
+///
+/// Status type defined by parameterized type
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Status<T: StatusType> {
+    pub reserved: u8,
+    pub interrupt_status: bool,
+    pub capabilities_list: bool,
+    pub is_66mhz_capable: bool,
+    pub user_definable_features: bool,
+    pub fast_back_to_back_capable: bool,
+    pub master_data_parity_error: bool,
+    pub devsel_timing: DevselTiming,
+    pub signaled_target_abort: bool,
+    pub received_target_abort: bool,
+    pub received_master_abort: bool,
+    pub system_error: bool,
+    pub detected_parity_error: bool,
+    _type: core::marker::PhantomData<T>,
 }
 
+#[bitfield(bits = 16)]
+#[repr(u16)]
+pub struct StatusProto {
+    reserved: B3,
+    interrupt_status: bool,
+    capabilities_list: bool,
+    is_66mhz_capable: bool,
+    user_definable_features: bool,
+    fast_back_to_back_capable: bool,
+    master_data_parity_error: bool,
+    devsel_timing: DevselTiming,
+    signaled_target_abort: bool,
+    received_target_abort: bool,
+    received_master_abort: bool,
+    /// Primary device status: Signaled System Error
+    /// Secondary Bridge device status: Received System Error
+    /// Secondary CardBus device status: bridge has detected SERR# asserted on the CardBus
+    system_error: bool,
+    detected_parity_error: bool,
+}
+
+#[derive(DisplayDoc, BitfieldSpecifier, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[bits = 2]
+pub enum DevselTiming {
+    /// fast
+    Fast,
+    /// medium
+    Medium,
+    /// slow
+    Slow,
+    /// undefined
+    Undefined,
+}
+
+pub trait StatusType {}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Primary;
+impl StatusType for Primary {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecondaryBridge;
+impl StatusType for SecondaryBridge {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecondaryCardbus;
+impl StatusType for SecondaryCardbus {}
+
+impl<T: StatusType> From<StatusProto> for Status<T> {
+    fn from(proto: StatusProto) -> Self {
+        Self {
+            reserved: proto.reserved(),
+            interrupt_status: proto.interrupt_status(),
+            capabilities_list: proto.capabilities_list(),
+            is_66mhz_capable: proto.is_66mhz_capable(),
+            user_definable_features: proto.user_definable_features(),
+            fast_back_to_back_capable: proto.fast_back_to_back_capable(),
+            master_data_parity_error: proto.master_data_parity_error(),
+            devsel_timing: proto.devsel_timing(),
+            signaled_target_abort: proto.signaled_target_abort(),
+            received_target_abort: proto.received_target_abort(),
+            received_master_abort: proto.received_master_abort(),
+            system_error: proto.system_error(),
+            detected_parity_error: proto.detected_parity_error(),
+            _type: Default::default(),
+        }
+    }
+}
+impl<T: StatusType> From<u16> for Status<T> {
+    fn from(word: u16) -> Self { StatusProto::from(word).into() }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use super::*;
+
+    #[test]
+    fn from_word() {
+        let result: Status<Primary> = 0xAAAA.into();
+        let sample = Status {
+            reserved: 0b010,
+            interrupt_status: true,
+            capabilities_list: false,
+            is_66mhz_capable: true,
+            user_definable_features: false,
+            fast_back_to_back_capable: true,
+            master_data_parity_error: false,
+            devsel_timing: DevselTiming::Medium,
+            signaled_target_abort: true,
+            received_target_abort: false,
+            received_master_abort: true,
+            system_error: false,
+            detected_parity_error: true,
+            _type: core::marker::PhantomData,
+        };
+        assert_eq!(sample, result);
+    }
+}

@@ -2,22 +2,42 @@
 //! perform auto configuration of the cards inserted into their bus.
 //!
 
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
-use bitfield_layout::{BitFieldLayout, Layout, };
-
-pub mod view;
+use displaydoc::Display;
+use byte::{
+    ctx::*,
+    self,
+    TryRead,
+    // TryWrite,
+    BytesExt,
+};
 
 pub mod address;
 pub use address::Address;
 
 pub mod header;
-pub use header::{Header, HeaderCommon, HeaderTypeNormal, BaseAddress, bar::BaseAddressSized, BaseAddresses};
+pub use header::{Header, HeaderType};
+
+pub mod capabilities;
+pub use capabilities::Capabilities;
+
+
+/// Device dependent region starts at 0x40 offset
+pub const DDR_OFFSET: usize = 0x40;
+/// Extended configuration space starts at 0x100 offset
+pub const ECS_OFFSET: usize = 0x100;
+
+const DDR_LENGTH: usize = ECS_OFFSET - DDR_OFFSET;
+const ECS_LENGTH: usize = 4096 - ECS_OFFSET;
+
 
 #[derive(Debug, Clone, PartialEq, Eq,)] 
 pub struct Device {
     pub address: Address,
     pub header: Header,
+    pub device_dependent_region: Option<DeviceDependentRegion>,
+    pub extended_configuration_space: Option<ExtendedConfigurationSpace>,
     /// Device name as exported by BIOS
     pub label: Option<String>,
     /// Physical slot
@@ -30,12 +50,37 @@ pub struct Device {
     pub irq: Option<u8>,
 }
 
+/// The device dependent region contains device specific information.
+/// The last 48 DWORDs of the PCI configuration space.
+#[derive(Debug, Clone, PartialEq, Eq,)] 
+pub struct DeviceDependentRegion(pub [u8; DDR_LENGTH]);
+
+impl<'a> TryFrom<&'a [u8]> for DeviceDependentRegion {
+    type Error = core::array::TryFromSliceError;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        bytes.try_into().map(Self)
+    }
+}
+
+/// PCI Express extends the Configuration Space to 4096 bytes per Function as compared to 256 bytes
+/// allowed by PCI Local Bus Specification.
+#[derive(Debug, Clone, PartialEq, Eq,)] 
+pub struct ExtendedConfigurationSpace(pub [u8; ECS_LENGTH]);
+
+impl<'a> TryFrom<&'a [u8]> for ExtendedConfigurationSpace {
+    type Error = core::array::TryFromSliceError;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        bytes.try_into().map(Self)
+    }
+}
 
 impl Device {
-    pub fn new(address: Address, header: Header) -> Self {
+    pub fn new(address: Address, cs: ConfigurationSpace) -> Self {
         Self { 
             address, 
-            header, 
+            header: cs.header, 
+            device_dependent_region: cs.device_dependent_region,
+            extended_configuration_space: cs.extended_configuration_space,
             label: None, 
             phy_slot: None, 
             numa_node: None, 
@@ -43,16 +88,11 @@ impl Device {
             irq: None,
         }
     }
-    pub fn irq(&self) -> u8 {
-        if let Some(irq) = self.irq {
-            irq
-        } else {
-            match &self.header {
-                Header::Normal(l) => l.interrupt_line,
-                Header::Bridge(l) => l.interrupt_line,
-                Header::Cardbus(l) => l.interrupt_line,
-            }
-        }
+    pub fn capabilities(&self) -> Option<Capabilities> {
+        let ddr = self.device_dependent_region.as_ref();
+        let ptr = self.header.capabilities_pointer;
+        ddr.filter(|_| ptr > 0)
+            .map(|ddr| Capabilities::new(&ddr, ptr))
     }
 }
 impl PartialOrd for Device {
@@ -66,133 +106,79 @@ impl Ord for Device {
     }
 }
 
-//impl Device {
-//    pub fn control<'a, T: AccessMethod>(&mut self, access: &'a mut T, command: Command) -> Result<Command, AccessError> {
-//        access.control(command)
-//    }
-//    pub fn status<'a, T: AccessMethod>(&mut self, access: &'a mut T, reset: Status) -> Result<Status, AccessError> {
-//        access.status(reset)
-//    }
-//}
 
+#[derive(Debug, Clone, PartialEq, Eq,)] 
+pub struct ConfigurationSpace {
+    pub header: Header,
+    pub device_dependent_region: Option<DeviceDependentRegion>,
+    pub extended_configuration_space: Option<ExtendedConfigurationSpace>,
+}
+
+impl ConfigurationSpace {
+    pub fn device(self, address: Address) -> Device {
+        Device { 
+            address, 
+            header: self.header, 
+            device_dependent_region: self.device_dependent_region,
+            extended_configuration_space: self.extended_configuration_space,
+            label: None, 
+            phy_slot: None, 
+            numa_node: None, 
+            iommu_group: None,
+            irq: None,
+        }
+    }
+}
+impl<'a> TryRead<'a, Endian> for ConfigurationSpace {
+    fn try_read(bytes: &'a [u8], endian: Endian) -> byte::Result<(Self, usize)> {
+        let offset = &mut 0;
+        let header = bytes.read_with::<Header>(offset, endian)?; 
+        let device_dependent_region = bytes.get(64..256)
+            .and_then(|bytes| bytes.try_into().ok());
+        let extended_configuration_space = bytes.get(256..4096)
+            .and_then(|bytes| bytes.try_into().ok());
+        Ok((Self { header, device_dependent_region, extended_configuration_space }, *offset))
+    }
+}
+
+#[derive(Display, Debug, Clone, PartialEq, Eq,)] 
+pub enum ConfigurationSpaceSize {
+    /// 64-bytes predefined header region
+    Header = 64,
+    /// 256-bytes device dependent region
+    DeviceDependentRegion = 256,
+    /// 4096-bytes extended configuration space
+    ExtendedConfigurationSpace = 4096,
+}
+
+impl From<usize> for ConfigurationSpaceSize {
+    fn from(size: usize) -> Self {
+        match size {
+            0..=63   => Self::Header,
+            64..=255 => Self::DeviceDependentRegion,
+            _        => Self::ExtendedConfigurationSpace,
+        }
+    }
+}
 
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
+    use byte::*;
     use super::*;
-    use super::header::*;
-
 
     #[test]
-    fn text_header_type_bridge() {
-        // PCI bridge [0604]: Renesas Technology Corp. SH7758 PCIe Switch [PS] [1912:001d] (prog-if 00 [Normal decode])
-        // Control: I/O+ Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx-
-        // Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
-        // Latency: 0
-        // BIST result: 00
-        // Bus: primary=04, secondary=05, subordinate=08, sec-latency=0
-        // Memory behind bridge: 92000000-929fffff
-        // Prefetchable memory behind bridge: 0000000091000000-0000000091ffffff
-        // Secondary status: 66MHz- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- <SERR- <PERR-
-        // BridgeCtl: Parity+ SERR+ NoISA- VGA+ MAbort- >Reset- FastB2B-
-        //         PriDiscTmr- SecDiscTmr- DiscTmrStat- DiscTmrSERREn-
-        // Capabilities: <access denied>
-        // Kernel driver in use: pcieport
-        let data = [
-            0x12, 0x19, 0x1d, 0x00, 0x07, 0x00, 0x10, 0x00, 0x00, 0x00, 0x04, 0x06, 0x00, 0x00, 0x01, 0x80,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x05, 0x08, 0x00, 0xf1, 0x01, 0x00, 0x00,
-            0x00, 0x92, 0x90, 0x92, 0x01, 0x91, 0xf1, 0x91, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0x1b, 0x00,
-        ];
-        let decoded: HeaderTypeBridge = bincode::deserialize(&data[..]).unwrap();
-        println!("{:#04X?}", &decoded);
-
-        assert_eq!(
-            ("Bridge", Some("PCI bridge"), Some("Normal decode")),
-            decoded.common.class_code.meaning(),
-            "PCI bridge [0604]"
-        );
-        assert_eq!(0x1912, decoded.common.vendor_id, "Renesas Technology Corp.");
-        assert_eq!(0x001d, decoded.common.device_id, "SH7758 PCIe Switch [PS]");
-        assert_eq!(0x00, decoded.common.class_code.interface, "prog-if 00 [Normal decode]");
-
-        let command_result = decoded.common.command.flags()
-            .take(11)
-            .map(|f| format!("{}{}", f.value.lspci, if f.is_set { "+" } else { "-" }))
-            .collect::<Vec<String>>()
-            .join(" ");
-        assert_eq!(
-            "I/O+ Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx-",
-            command_result,
-            "Control"
-        );
-
-        let status_result = {
-            let v = decoded.common.status.flags()
-                .map(|f| format!("{}{}", f.value.lspci, if f.is_set { "+" } else { "-" }))
-                .collect::<Vec<String>>();
-            format!("{} {}", &v[4..].join(" "), v[3])
-        };
-        assert_eq!(
-            "Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=medium- DEVSEL=slow- >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-",
-            status_result,
-            "Status"
-        );
-
-        assert_eq!(0x00, decoded.common.latency_timer, "Latency");
-
-        let bist_result =
-            if decoded.common.bist.is_capable {
-                if decoded.common.bist.is_running {
-                    Err("BIST is running")
-                } else {
-                    Ok(decoded.common.bist.completion_code)
-                }
-            } else {
-                Err("Not capable")
-            };
-        assert_eq!(Ok(0x00), bist_result, "BIST");
-
-        assert_eq!(
-            (0x04, 0x05, 0x08, 0x00),
-            (decoded.primary_bus_number, decoded.secondary_bus_number,
-             decoded.subordinate_bus_number, decoded.secondary_latency_timer),
-            "Bus: primary=04, secondary=05, subordinate=08, sec-latency=0"
-        );
-        assert_eq!(
-            (0x92000000u32, 0x929fffffu32),
-            ((decoded.memory_base as u32) << 16, ((decoded.memory_limit as u32) << 16) + 0xfffff),
-            "Memory behind bridge: 92000000-929fffff"
-        );
-        assert_eq!(
-            (0x91000000u64, 0x91ffffffu64),
-            ((decoded.prefetchable_memory_base as u64 & !0x0f) << 16, ((decoded.prefetchable_memory_limit as u64 & !0x0f) << 16) + 0xfffff),
-            "Prefetchable memory behind bridge: 0000000091000000-0000000091ffffff" 
-        );
-
-        let secondary_status_result = {
-            let v = decoded.common.status.flags()
-                .map(|f| format!("{}{}", f.value.lspci, if f.is_set { "+" } else { "-" }))
-                .collect::<Vec<String>>();
-            format!("{} {}", &v[4..].join(" "), v[3])
-        };
-        assert_eq!(
-            "Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=medium- DEVSEL=slow- >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-",
-            secondary_status_result,
-            "Secondary status"
-        );
-            
-        let bridge_control_result = decoded.bridge_control.flags()
-            .take(12)
-            .map(|f| format!("{}{}", f.value.lspci, if f.is_set { "+" } else { "-" }))
-            .collect::<Vec<String>>()
-            .join(" ");
-        assert_eq!(
-            "Parity+ SERR+ NoISA- VGA+ VGA16+ MAbort- >Reset- FastB2B- PriDiscTmr- SecDiscTmr- DiscTmrStat- DiscTmrSERREn-",
-            bridge_control_result,
-            "Bridge control"
-        );
+    fn device_order() {
+        let cs: ConfigurationSpace = [0; 64].read_with(&mut 0, LE).unwrap();
+        let a = Device::new(Default::default(), cs.clone());
+        let b = Device::new("00:00.1".parse().unwrap(), cs);
+        assert!(a < b);
     }
 
+    #[test]
+    fn empty_capabilities() {
+        let cs = [0; 64].read_with(&mut 0, LE).unwrap();
+        let device = Device::new(Default::default(), cs);
+        assert_eq!(None, device.capabilities());
+    }
 }

@@ -3,66 +3,14 @@
 //!
 
 use core::convert::TryFrom;
-use core::cell::Cell;
-use core::fmt::{self, Display, Formatter};
 
 
 
 pub mod pciids;
-//pub mod access;
+pub mod access;
 pub mod device;
+pub mod view;
 
-//mod capabilities;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum View {
-    Basic,
-    Lspci(u64),
-    Extended,
-}
-impl Default for View {
-    fn default() -> Self {
-        Self::Basic
-    }
-}
-
-pub trait DisplayView<'a> {
-    type View: Display;
-    fn display(&'a self, view: View) -> Self::View;
-}
-
-
-pub struct CheckBox {
-    value: bool,
-    _view: Cell<View>,
-}
-impl CheckBox {
-    pub fn basic(value: bool) -> Self { CheckBox { value, _view: Cell::new(View::Basic) }}
-    pub fn lspci(value: bool) -> Self { CheckBox { value, _view: Cell::new(View::Lspci(0)) }}
-    pub fn extended(value: bool) -> Self { CheckBox { value, _view: Cell::new(View::Extended) }}
-}
-impl Display for CheckBox {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let view = self._view.take();
-        match view {
-            View::Basic => write!(f, "{}", if self.value { "✓" } else { "✗" }),
-            View::Lspci(_) => write!(f, "{}", if self.value { "+" } else { "-" }),
-            View::Extended => write!(f, "{}", if self.value { "yes" } else { "no" }),
-        }
-    }
-}
-impl<'a> DisplayView<'a> for CheckBox {
-    type View = &'a Self;
-    fn display(&'a self, view: View) -> Self::View {
-        self._view.set(view);
-        self
-    }
-}
-impl From<bool> for CheckBox {
-    fn from(value: bool) -> Self {
-        Self { value, _view: Default::default() }
-    }
-}
 
 ///// Configuration space data handler
 //#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

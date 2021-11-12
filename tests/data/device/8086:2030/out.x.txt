@@ -1,0 +1,6 @@
+ae:00.0 PCI bridge: Intel Corporation Sky Lake-E PCI Express Root Port A (rev 04)
+00: 86 80 30 20 47 05 10 00 04 00 04 06 00 00 01 00
+10: 00 00 00 00 00 00 00 00 ae af af 00 f0 00 00 20
+20: a0 e1 a0 e1 01 e1 81 e1 00 00 00 00 00 00 00 00
+30: 00 00 00 00 40 00 00 00 00 00 00 00 ff 01 03 00
+

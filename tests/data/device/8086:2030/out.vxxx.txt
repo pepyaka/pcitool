@@ -1,0 +1,38 @@
+ae:00.0 PCI bridge: Intel Corporation Sky Lake-E PCI Express Root Port A (rev 04) (prog-if 00 [Normal decode])
+	DeviceName: SLOT 4
+	Physical Slot: 4
+	Flags: bus master, fast devsel, latency 0, IRQ 32, NUMA node 1
+	Bus: primary=ae, secondary=af, subordinate=af, sec-latency=0
+	I/O behind bridge: [disabled]
+	Memory behind bridge: e1a00000-e1afffff [size=1M]
+	Prefetchable memory behind bridge: 00000000e1000000-00000000e18fffff [size=9M]
+	Capabilities: [40] Subsystem: Intel Corporation Device 0000
+	Capabilities: [60] MSI: Enable+ Count=1/2 Maskable+ 64bit-
+	Capabilities: [90] Express Root Port (Slot+), MSI 00
+	Capabilities: [e0] Power Management version 3
+	Capabilities: [100] Vendor Specific Information: ID=0002 Rev=0 Len=00c <?>
+	Capabilities: [110] Access Control Services
+	Capabilities: [148] Advanced Error Reporting
+	Capabilities: [1d0] Vendor Specific Information: ID=0003 Rev=1 Len=00a <?>
+	Capabilities: [250] Secondary PCI Express
+	Capabilities: [280] Vendor Specific Information: ID=0005 Rev=3 Len=018 <?>
+	Capabilities: [298] Vendor Specific Information: ID=0007 Rev=0 Len=024 <?>
+	Capabilities: [300] Vendor Specific Information: ID=0008 Rev=0 Len=038 <?>
+	Kernel driver in use: pcieport
+00: 86 80 30 20 47 05 10 00 04 00 04 06 00 00 01 00
+10: 00 00 00 00 00 00 00 00 ae af af 00 f0 00 00 20
+20: a0 e1 a0 e1 01 e1 81 e1 00 00 00 00 00 00 00 00
+30: 00 00 00 00 40 00 00 00 00 00 00 00 ff 01 03 00
+40: 0d 60 00 00 86 80 00 00 00 00 00 00 00 00 00 00
+50: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+60: 05 90 03 01 38 00 e0 fe 00 00 00 00 02 00 00 00
+70: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+90: 10 e0 42 01 21 80 00 00 24 01 00 00 03 39 7a 05
+a0: 40 00 43 30 80 25 20 00 c0 03 48 01 1e 00 01 00
+b0: 00 00 00 00 be 13 00 00 26 00 00 00 0e 00 00 00
+c0: 43 00 1f 00 00 00 00 00 00 00 00 00 00 00 00 00
+d0: 00 00 00 00 10 00 00 00 00 00 00 00 00 00 00 00
+e0: 01 00 03 c8 08 00 00 00 00 00 00 00 00 00 00 00
+f0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+

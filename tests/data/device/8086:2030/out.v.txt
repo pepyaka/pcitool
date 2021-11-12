@@ -1,0 +1,22 @@
+ae:00.0 PCI bridge: Intel Corporation Sky Lake-E PCI Express Root Port A (rev 04) (prog-if 00 [Normal decode])
+	DeviceName: SLOT 4
+	Physical Slot: 4
+	Flags: bus master, fast devsel, latency 0, IRQ 32, NUMA node 1
+	Bus: primary=ae, secondary=af, subordinate=af, sec-latency=0
+	I/O behind bridge: [disabled]
+	Memory behind bridge: e1a00000-e1afffff [size=1M]
+	Prefetchable memory behind bridge: 00000000e1000000-00000000e18fffff [size=9M]
+	Capabilities: [40] Subsystem: Intel Corporation Device 0000
+	Capabilities: [60] MSI: Enable+ Count=1/2 Maskable+ 64bit-
+	Capabilities: [90] Express Root Port (Slot+), MSI 00
+	Capabilities: [e0] Power Management version 3
+	Capabilities: [100] Vendor Specific Information: ID=0002 Rev=0 Len=00c <?>
+	Capabilities: [110] Access Control Services
+	Capabilities: [148] Advanced Error Reporting
+	Capabilities: [1d0] Vendor Specific Information: ID=0003 Rev=1 Len=00a <?>
+	Capabilities: [250] Secondary PCI Express
+	Capabilities: [280] Vendor Specific Information: ID=0005 Rev=3 Len=018 <?>
+	Capabilities: [298] Vendor Specific Information: ID=0007 Rev=0 Len=024 <?>
+	Capabilities: [300] Vendor Specific Information: ID=0008 Rev=0 Len=038 <?>
+	Kernel driver in use: pcieport
+

@@ -3,48 +3,17 @@
 //! This capability structure provides a standard interface to control power management features in
 //! a PCI device. It is fully documented in the PCI Power Management Interface Specification.
 
-use core::cell::Cell;
-use std::fmt::{self, Display, Formatter};
-
 use modular_bitfield::prelude::*;
 use displaydoc::Display as DisplayDoc;
+use byte::{
+    ctx::*,
+    self,
+    TryRead,
+    // TryWrite,
+    BytesExt,
+};
 
-use crate::{DisplayView, View, CheckBox};
 
-
-/// Raw bit struct for [PowerManagementInterface]
-#[bitfield(bits = 48)]
-#[derive(Debug, PartialEq, Eq,)] 
-pub struct PowerManagementRegisterBlock {
-    // capability_id: u8,
-    // next_item_ptr: u8,
-    caps_version: B3,
-    caps_pme_clock: bool,
-    caps_reserved: bool,
-    caps_device_specific_initialization: bool,
-    #[bits = 3]
-    aux_current: AuxCurrent,
-    caps_d1_support: bool,
-    caps_d2_support: bool,
-    pme_support_d0: bool,
-    pme_support_d1: bool,
-    pme_support_d2: bool,
-    pme_support_d3_hot: bool,
-    pme_support_d3_cold: bool,
-    #[bits = 2]
-    power_state: PowerState,
-    ctrl_reserved: B6,
-    ctrl_pme_enabled: bool,
-    #[bits = 4]
-    data_select: DataSelect,
-    #[bits = 2]
-    data_scale: DataScale,
-    ctrl_pme_status: bool,
-    br_reserved: B6,
-    br_b2_b3: bool,
-    br_bpcc_enabled: bool,
-    data_value: u8,
-}
 
 #[derive(Debug, PartialEq, Eq,)] 
 pub struct PowerManagementInterface {
@@ -52,7 +21,25 @@ pub struct PowerManagementInterface {
     pub control: Control,
     pub bridge: Bridge,
     pub data: Option<Data>,
-    _view: Cell<View>,
+}
+
+
+#[bitfield(bits = 16)]
+#[repr(u16)]
+pub struct CapabilitiesProto {
+    version: B3,
+    pme_clock: bool,
+    reserved: bool,
+    device_specific_initialization: bool,
+    #[bits = 3]
+    aux_current: AuxCurrent,
+    d1_support: bool,
+    d2_support: bool,
+    pme_support_d0: bool,
+    pme_support_d1: bool,
+    pme_support_d2: bool,
+    pme_support_d3_hot: bool,
+    pme_support_d3_cold: bool,
 }
 
 /// Provides information on the capabilities of the function related to power management
@@ -74,6 +61,30 @@ pub struct Capabilities {
     /// Supports the D2 Power Management State.
     pub d2_support: bool,
     pub pme_support: PmeSupport,
+}
+
+impl From<CapabilitiesProto> for Capabilities {
+    fn from(proto: CapabilitiesProto) -> Self {
+        Self {
+            version: proto.version(),
+            pme_clock: proto.pme_clock(),
+            reserved: proto.reserved(),
+            device_specific_initialization: proto.device_specific_initialization(),
+            aux_current: proto.aux_current(),
+            d1_support: proto.d1_support(),
+            d2_support: proto.d2_support(),
+            pme_support: PmeSupport {
+                d0: proto.pme_support_d0(),
+                d1: proto.pme_support_d1(),
+                d2: proto.pme_support_d2(),
+                d3_hot: proto.pme_support_d3_hot(),
+                d3_cold: proto.pme_support_d3_cold(),
+            },
+        }
+    }
+}
+impl From<u16> for Capabilities {
+    fn from(word: u16) -> Self { CapabilitiesProto::from(word).into() }
 }
 
 /// This 3 bit field reports the 3.3Vaux auxiliary current requirements for the PCI function.
@@ -114,6 +125,20 @@ pub struct PmeSupport {
     pub d3_cold: bool,
 }
 
+#[bitfield(bits = 16)]
+#[repr(u16)]
+pub struct ControlProto {
+    #[bits = 2]
+    power_state: PowerState,
+    reserved: B6,
+    pme_enabled: bool,
+    #[bits = 4]
+    data_select: DataSelect,
+    #[bits = 2]
+    data_scale: DataScale,
+    pme_status: bool,
+}
+
 /// Used to manage the PCI function’s power management state as well as to enable/monitor PMEs.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Control {
@@ -129,6 +154,21 @@ pub struct Control {
     pub pme_status: bool,
 }
 
+impl From<ControlProto> for Control {
+    fn from(proto: ControlProto) -> Self {
+        Self {
+            power_state: proto.power_state(),
+            reserved: proto.reserved(),
+            no_soft_reset: ((proto.reserved() << 2) & 0x0008) != 0,
+            pme_enabled: proto.pme_enabled(),
+            pme_status: proto.pme_status(),
+        }
+    }
+}
+impl From<u16> for Control {
+    fn from(word: u16) -> Self { ControlProto::from(word).into() }
+}
+
 /// Current power state.
 #[derive(BitfieldSpecifier, Debug, Clone, Copy, PartialEq, Eq)]
 #[bits = 2]
@@ -137,6 +177,15 @@ pub enum PowerState {
     D1,
     D2,
     D3Hot,
+}
+
+
+#[bitfield(bits = 8)]
+#[repr(u8)]
+pub struct BridgeProto {
+    reserved: B6,
+    b2_b3: bool,
+    bpcc_enabled: bool,
 }
 
 /// PCI bridge specific functionality and is required for all PCI-toPCI bridges
@@ -153,6 +202,19 @@ pub struct Bridge {
     ///
     /// Indicates that the bus power/clock control mechanism is enabled
     pub bpcc_enabled: bool,
+}
+
+impl From<BridgeProto> for Bridge {
+    fn from(proto: BridgeProto) -> Self {
+        Self {
+            reserved: proto.reserved(),
+            b2_b3: proto.b2_b3(),
+            bpcc_enabled: proto.bpcc_enabled(),
+        }
+    }
+}
+impl From<u8> for Bridge {
+    fn from(byte: u8) -> Self { BridgeProto::from(byte).into() }
 }
 
 /// Register that provides a mechanism for the function to report state dependent operating data
@@ -204,104 +266,30 @@ pub enum DataScale {
 }
 
 
-impl<'a> DisplayView<'a> for PowerManagementInterface {
-    type View = &'a Self;
-    fn display(&'a self, view: View) -> Self::View {
-        self._view.set(view);
-        self
-    }
-}
-impl From<[u8; 6]> for PowerManagementInterface {
-    fn from(data: [u8; 6]) -> Self {
-        let pmrb = PowerManagementRegisterBlock::from_bytes(data);
-        Self {
-            capabilities: Capabilities {
-                version: pmrb.caps_version(),
-                pme_clock: pmrb.caps_pme_clock(),
-                reserved: pmrb.caps_reserved(),
-                device_specific_initialization: pmrb.caps_device_specific_initialization(),
-                aux_current: pmrb.aux_current(),
-                d1_support: pmrb.caps_d1_support(),
-                d2_support: pmrb.caps_d2_support(),
-                pme_support: PmeSupport {
-                    d0: pmrb.pme_support_d0(),
-                    d1: pmrb.pme_support_d1(),
-                    d2: pmrb.pme_support_d2(),
-                    d3_hot: pmrb.pme_support_d3_hot(),
-                    d3_cold: pmrb.pme_support_d3_cold(),
-                },
-            },
-            control: Control {
-                power_state: pmrb.power_state(),
-                reserved: pmrb.ctrl_reserved(),
-                // PCI_PM_CTRL_NO_SOFT_RESET
-                no_soft_reset: ((pmrb.ctrl_reserved() << 2) & 0x0008) != 0,
-                pme_enabled: pmrb.ctrl_pme_enabled(),
-                pme_status: pmrb.ctrl_pme_status(),
-            },
-            bridge: Bridge {
-                reserved: pmrb.br_reserved(),
-                b2_b3: pmrb.br_b2_b3(),
-                bpcc_enabled: pmrb.br_bpcc_enabled(),
-            },
-            data: (pmrb.data_value() != 0).then(|| {
-                Data {
-                    value: pmrb.data_value(),
-                    select: pmrb.data_select(),
-                    scale: pmrb.data_scale(),
-                }
-            }),
-            _view: Default::default(),
-        }
-    }
-}
-impl Display for PowerManagementInterface {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let (caps, ctrl, br, d) = (&self.capabilities, &self.control, &self.bridge, &self.data);
-        match self._view.take() {
-            View::Basic => {
-                Ok(())
-            },
-            View::Lspci(verbose) => {
-                write!(f, "Power Management version {}\n", caps.version)?;
-                if verbose < 2 {
-                    return Ok(())
-                }
-                write!(f, "\t\tFlags: PMEClk{} DSI{} D1{} D2{} AuxCurrent={} PME(D0{},D1{},D2{},D3hot{},D3cold{})\n",
-                    CheckBox::lspci(caps.pme_clock), 
-                    CheckBox::lspci(caps.device_specific_initialization), 
-                    CheckBox::lspci(caps.d1_support), 
-                    CheckBox::lspci(caps.d2_support), 
-                    caps.aux_current, 
-                    CheckBox::lspci(caps.pme_support.d0),
-                    CheckBox::lspci(caps.pme_support.d1),
-                    CheckBox::lspci(caps.pme_support.d2),
-                    CheckBox::lspci(caps.pme_support.d3_hot),
-                    CheckBox::lspci(caps.pme_support.d3_cold),
-                )?;
-                write!(f, "\t\tStatus: D{} NoSoftRst{} PME-Enable{} DSel={} DScale={} PME{}\n",
-                    ctrl.power_state as usize,
-                    CheckBox::lspci(ctrl.no_soft_reset),
-                    CheckBox::lspci(ctrl.pme_enabled),
-                    d.map(|d| d.select as usize).unwrap_or(0),
-                    d.map(|d| d.scale as usize).unwrap_or(0),
-                    CheckBox::lspci(ctrl.pme_status),
-                )?;
-                if br.bpcc_enabled || self.bridge.b2_b3 || self.bridge.reserved != 0 {
-                    write!(f, "\t\tBridge: PM{} B3{}\n",
-                        CheckBox::lspci(br.bpcc_enabled),
-                        CheckBox::lspci(br.b2_b3),
-                    )?;
-                }
-                Ok(())
-            },
-            View::Extended => {
-                Ok(())
-            }
-        }
-    }
-}
+impl<'a> TryRead<'a, Endian> for PowerManagementInterface {
+    fn try_read(bytes: &'a [u8], endian: Endian) -> byte::Result<(Self, usize)> {
+        let offset = &mut 0;
+        let capabilities = bytes.read_with::<u16>(offset, endian)?.into();
+        let control_proto = ControlProto::from(bytes.read_with::<u16>(offset, endian)?);
+        let bridge = bytes.read_with::<u8>(offset, endian)?.into();
+        let data = {
+            let value = bytes.read_with::<u8>(offset, endian)?;
+            (value != 0).then(|| Data { 
+                value,
+                select: control_proto.data_select(),
+                scale: control_proto.data_scale(),
+            })
+        };
+        let pmi = PowerManagementInterface {
+            capabilities,
+            control: control_proto.into(),
+            bridge,
+            data,
+        };
+        Ok((pmi, *offset))
 
+    }
+}
 
 
 #[cfg(test)]
@@ -316,7 +304,7 @@ mod tests {
         //         Flags: PMEClk- DSI- D1+ D2+ AuxCurrent=0mA PME(D0+,D1+,D2+,D3hot+,D3cold-)
         //         Status: D0 NoSoftRst- PME-Enable- DSel=0 DScale=0 PME-
         //         Bridge: PM- B3+
-        let result = PowerManagementInterface::from(data);
+        let result = data.read_with::<PowerManagementInterface>(&mut 0, LE).unwrap();
         let sample = PowerManagementInterface {
             capabilities: Capabilities {
                 version: 0b10,
@@ -347,38 +335,8 @@ mod tests {
                 bpcc_enabled: false,
             },
             data: None,
-            _view: Default::default(),
         };
         assert_eq!(sample, result);
     }
-
-    #[test]
-    fn display_lspci() {
-        let data = [0x02,0x7e,0x00,0x00,0x40,0x00];
-        let pmi = PowerManagementInterface::from(data);
-        
-        let v1_result = pmi.display(View::Lspci(1)).to_string();
-        let v1_sample = "\
-            Power Management version 2\n\
-        ";
-        assert_eq!(v1_sample, v1_result, "-v");
-        
-        let v2_result = pmi.display(View::Lspci(2)).to_string();
-        let v2_sample = "\
-            Power Management version 2\n\
-            \t\tFlags: PMEClk- DSI- D1+ D2+ AuxCurrent=0mA PME(D0+,D1+,D2+,D3hot+,D3cold-)\n\
-            \t\tStatus: D0 NoSoftRst- PME-Enable- DSel=0 DScale=0 PME-\n\
-            \t\tBridge: PM- B3+\n\
-        ";
-        assert_eq!(v2_sample, v2_result, "-vv");
-
-        let v3_result = pmi.display(View::Lspci(3)).to_string();
-        let v3_sample = "\
-            Power Management version 2\n\
-            \t\tFlags: PMEClk- DSI- D1+ D2+ AuxCurrent=0mA PME(D0+,D1+,D2+,D3hot+,D3cold-)\n\
-            \t\tStatus: D0 NoSoftRst- PME-Enable- DSel=0 DScale=0 PME-\n\
-            \t\tBridge: PM- B3+\n\
-        ";
-        assert_eq!(v3_sample, v3_result, "-vvv");
-    }
 }
+

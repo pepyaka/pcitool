@@ -1,4 +1,11 @@
 use serde::{Serialize, Deserialize,}; 
+use byte::{
+    ctx::*,
+    self,
+    TryRead,
+    // TryWrite,
+    BytesExt,
+};
 
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -10,6 +17,18 @@ pub struct ClassCode {
     pub sub: u8, 
     /// Base class code which broadly classifies the type of function the device performs
     pub base: u8,
+}
+
+impl<'a> TryRead<'a, Endian> for ClassCode {
+    fn try_read(bytes: &'a [u8], endian: Endian) -> byte::Result<(Self, usize)> {
+        let offset = &mut 0;
+        let class_code = ClassCode {
+            interface: bytes.read_with::<u8>(offset, endian)?,
+            sub: bytes.read_with::<u8>(offset, endian)?,
+            base: bytes.read_with::<u8>(offset, endian)?,
+        };
+        Ok((class_code, *offset))
+    }
 }
 
 impl ClassCode {
