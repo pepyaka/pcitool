@@ -67,101 +67,180 @@ pub struct Header {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HeaderType {
-    /// General device
-    Normal {
-        base_addresses: BaseAddresses<6>,
-        /// Points to the Card Information Structure and is used by devices that share silicon between CardBus and PCI. 
-        cardbus_cis_pointer: u32,
-        /// Subsystem Vendor ID
-        sub_vendor_id: u16,
-        /// Subsystem Device ID
-        sub_device_id: u16,
-        /// Expansion ROM
-        expansion_rom: ExpansionRom,
-        /// Reserved
-        reserved: [u8; 7],
-        /// A read-only register that specifies the burst period length, in 1/4 microsecond units,
-        /// that the device needs (assuming a 33 MHz clock rate).
-        min_grant: u8, 
-        /// A read-only register that specifies how often the device needs access to the PCI bus
-        /// (in 1/4 microsecond units).
-        max_latency: u8, 
-    },
-    /// PCI-to-PCI bridge
-    Bridge {
-        /// Base Address Registers
-        base_addresses: BaseAddresses<2>,
-        /// Primary Bus Number
-        primary_bus_number: u8,
-        /// Secondary Bus Number
-        secondary_bus_number: u8,
-        /// Subordinate Bus Numbe
-        subordinate_bus_number: u8,
-        /// Secondary Latency Timer
-        secondary_latency_timer: u8,
-        /// I/O Base
-        io_base: u8,
-        /// I/O Limit
-        io_limit: u8,
-        /// Secondary Status
-        secondary_status: Status<SecondaryBridge>,
-        /// Memory Base
-        memory_base: u16,
-        /// Memory Limit
-        memory_limit: u16,
-        /// Prefetchable Memory Base
-        prefetchable_memory_base: u16,
-        /// Prefetchable Memory Limit 
-        prefetchable_memory_limit: u16,
-        /// Prefetchable Base Upper 32 Bits 
-        prefetchable_memory_base_upper_32: u32,
-        /// Prefetchable Limit Upper 32 Bits
-        prefetchable_memory_limit_upper_32: u32,
-        /// I/O Base Upper 16 Bits
-        io_base_upper_16: u16,
-        /// I/O Limit Upper 16 Bits
-        io_limit_upper_16: u16,
-        /// Reserved
-        reserved: [u8; 3],
-        /// Expansion ROM
-        expansion_rom: ExpansionRom,
-        bridge_control: BridgeControl,
-    },
-    /// PCI-to-CardBus bridge
-    Cardbus {
-        base_addresses: BaseAddresses<1>,
-        /// Reserved
-        reserved: u8,
-        /// Secondary status
-        secondary_status: Status<SecondaryCardbus>,
-        /// PCI Bus Number
-        pci_bus_number: u8,
-        /// CardBus Bus Number
-        cardbus_bus_number: u8,
-        /// Subordinate Bus Number 
-        subordinate_bus_number: u8,
-        /// CardBus Latency Timer
-        cardbus_latency_timer: u8,
-        /// Memory Base #0
-        memory_base_address_0: u32,
-        /// Memory Limit #0
-        memory_limit_address_0: u32,
-        /// Memory Base Address #1
-        memory_base_address_1: u32,
-        /// Memory Limit #1
-        memory_limit_address_1: u32,
-        io_access_address_range_0: IoAccessAddressRange,
-        io_access_address_range_1: IoAccessAddressRange,
-        bridge_control: CardbusBridgeControl,
-        /// Subsystem Vendor ID
-        subsystem_vendor_id: u16,
-        /// Subsystem Device ID
-        subsystem_device_id: u16,
-        /// PC Card 16 Bit IF Legacy Mode Base Address
-        legacy_mode_base_address: u32,
-    },
+    Normal(Normal),
+    Bridge(Bridge),
+    Cardbus(Cardbus),
 }
 
+/// General device
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Normal {
+    pub base_addresses: BaseAddresses<6>,
+    /// Points to the Card Information Structure and is used by devices that share silicon between CardBus and PCI. 
+    pub cardbus_cis_pointer: u32,
+    /// Subsystem Vendor ID
+    pub sub_vendor_id: u16,
+    /// Subsystem Device ID
+    pub sub_device_id: u16,
+    /// Expansion ROM
+    pub expansion_rom: ExpansionRom,
+    /// Reserved
+    pub reserved: [u8; 7],
+    /// A read-only register that specifies the burst period length, in 1/4 microsecond units,
+    /// that the device needs (assuming a 33 MHz clock rate).
+    pub min_grant: u8, 
+    /// A read-only register that specifies how often the device needs access to the PCI bus
+    /// (in 1/4 microsecond units).
+    pub max_latency: u8, 
+}
+
+/// PCI-to-PCI bridge
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bridge {
+    /// Base Address Registers
+    pub base_addresses: BaseAddresses<2>,
+    /// Primary Bus Number
+    pub primary_bus_number: u8,
+    /// Secondary Bus Number
+    pub secondary_bus_number: u8,
+    /// Subordinate Bus Numbe
+    pub subordinate_bus_number: u8,
+    /// Secondary Latency Timer
+    pub secondary_latency_timer: u8,
+    pub io_address_range: BridgeIoAddressRange,
+    /// Secondary Status
+    pub secondary_status: Status<SecondaryBridge>,
+    /// Memory Base
+    pub memory_base: u16,
+    /// Memory Limit
+    pub memory_limit: u16,
+    pub prefetchable_memory: BridgePrefetchableMemory,
+    /// Reserved
+    pub reserved: [u8; 3],
+    /// Expansion ROM
+    pub expansion_rom: ExpansionRom,
+    pub bridge_control: BridgeControl,
+}
+
+/// The I/O Base and I/O Limit registers define an address range that is used by the bridge to
+/// determine when to forward I/O transactions from one interface to the other.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeIoAddressRange {
+    NotImplemented,
+    IoAddr16 {
+        base: u16,
+        limit: u16,
+    },
+    IoAddr32 {
+        base: u32,
+        limit: u32,
+    },
+    Reserved {
+        base: u8,
+        limit: u8,
+    },
+}
+impl BridgeIoAddressRange {
+    pub fn new(io_base: u8, io_limit: u8, io_base_upper_16: u16, io_limit_upper_16: u16) -> Self {
+        let base_capability = io_base & 0xf;
+        let base_address = io_base & !0xf;
+        let _limit_capability = io_limit & 0xf;
+        let limit_address = io_limit & !0xf;
+        match (base_capability, base_address) {
+            (0x00, 0x00) => Self::NotImplemented,
+            (0x00, _) => Self::IoAddr16 {
+                base: (base_address as u16) << 8,
+                limit: (limit_address as u16) << 8,
+            },
+            (0x01, _) => Self::IoAddr32 {
+                base: ((base_address as u32) << 8) | ((io_base_upper_16 as u32) << 16),
+                limit: ((limit_address as u32) << 8) | ((io_limit_upper_16 as u32) << 16),
+            },
+            _ => Self::Reserved {
+                base: io_base,
+                limit: io_limit,
+            },
+        }
+    }
+}
+
+/// The Prefetchable Memory Base and Prefetchable Memory Limit registers define a prefetchable
+/// memory address range which is used by the bridge to determine when to forward memory
+/// transactions from one interface to the other
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgePrefetchableMemory {
+    NotImplemented,
+    MemAddr32 {
+        base: u32,
+        limit: u32,
+    },
+    MemAddr64 {
+        base: u64,
+        limit: u64,
+    },
+    Reserved {
+        base: u16,
+        limit: u16,
+    },
+}
+impl BridgePrefetchableMemory {
+    pub fn new(base: u16, limit: u16, base_upper_32: u32, limit_upper_32: u32) -> Self {
+        let base_capability = base & 0xf;
+        let base_address = base & !0xf;
+        let _limit_capability = limit & 0xf;
+        let limit_address = limit & !0xf;
+        match (base_capability, base_address) {
+            (0x00, 0x00) => Self::NotImplemented,
+            (0x00, _) => Self::MemAddr32 {
+                base: (base_address as u32) << 16,
+                limit: (limit_address as u32) << 16,
+            },
+            (0x01, _) => Self::MemAddr64 {
+                base: ((base_address as u64) << 16) | ((base_upper_32 as u64) << 32),
+                limit: ((limit_address as u64) << 16) | ((limit_upper_32 as u64) << 32),
+            },
+            _ => Self::Reserved {
+                base,
+                limit,
+            },
+        }
+    }
+}
+
+/// PCI-to-CardBus bridge
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cardbus {
+    pub base_addresses: BaseAddresses<1>,
+    /// Reserved
+    pub reserved: u8,
+    /// Secondary status
+    pub secondary_status: Status<SecondaryCardbus>,
+    /// PCI Bus Number
+    pub pci_bus_number: u8,
+    /// CardBus Bus Number
+    pub cardbus_bus_number: u8,
+    /// Subordinate Bus Number 
+    pub subordinate_bus_number: u8,
+    /// CardBus Latency Timer
+    pub cardbus_latency_timer: u8,
+    /// Memory Base #0
+    pub memory_base_address_0: u32,
+    /// Memory Limit #0
+    pub memory_limit_address_0: u32,
+    /// Memory Base Address #1
+    pub memory_base_address_1: u32,
+    /// Memory Limit #1
+    pub memory_limit_address_1: u32,
+    pub io_access_address_range_0: IoAccessAddressRange,
+    pub io_access_address_range_1: IoAccessAddressRange,
+    pub bridge_control: CardbusBridgeControl,
+    /// Subsystem Vendor ID
+    pub subsystem_vendor_id: u16,
+    /// Subsystem Device ID
+    pub subsystem_device_id: u16,
+    /// PC Card 16 Bit IF Legacy Mode Base Address
+    pub legacy_mode_base_address: u32,
+}
 
 /// Represents that status and allows control of a devices BIST (built-in self test).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -241,7 +320,7 @@ impl<'a> TryRead<'a, Endian> for Header {
         let is_multi_function = htype & 0x80 != 0;
         let header_type = match htype & !0x80 {
             0x00 => {
-                HeaderType::Normal {
+                HeaderType::Normal(Normal {
                     base_addresses: bytes.read_with::<BaseAddresses<6>>(offset, endian)?,
                     cardbus_cis_pointer: bytes.read_with::<u32>(offset, endian)?,
                     sub_vendor_id: bytes.read_with::<u16>(offset, endian)?,
@@ -258,26 +337,34 @@ impl<'a> TryRead<'a, Endian> for Header {
                         bytes.read_with::<u8>(offset, endian)?
                     }, 
                     max_latency: bytes.read_with::<u8>(offset, endian)?, 
-                }
+                })
             },
             0x01 => {
-                HeaderType::Bridge {
+                let (io_base, io_limit);
+                HeaderType::Bridge(Bridge {
                     base_addresses: bytes.read_with::<BaseAddresses<2>>(offset, endian)?,
                     primary_bus_number: bytes.read_with::<u8>(offset, endian)?,
                     secondary_bus_number: bytes.read_with::<u8>(offset, endian)?,
                     subordinate_bus_number: bytes.read_with::<u8>(offset, endian)?,
                     secondary_latency_timer: bytes.read_with::<u8>(offset, endian)?,
-                    io_base: bytes.read_with::<u8>(offset, endian)?,
-                    io_limit: bytes.read_with::<u8>(offset, endian)?,
-                    secondary_status: bytes.read_with::<u16>(offset, endian)?.into(),
+                    secondary_status: {
+                        io_base = bytes.read_with::<u8>(offset, endian)?;
+                        io_limit = bytes.read_with::<u8>(offset, endian)?;
+                        bytes.read_with::<u16>(offset, endian)?.into()
+                    },
                     memory_base: bytes.read_with::<u16>(offset, endian)?,
                     memory_limit: bytes.read_with::<u16>(offset, endian)?,
-                    prefetchable_memory_base: bytes.read_with::<u16>(offset, endian)?,
-                    prefetchable_memory_limit: bytes.read_with::<u16>(offset, endian)?,
-                    prefetchable_memory_base_upper_32: bytes.read_with::<u32>(offset, endian)?,
-                    prefetchable_memory_limit_upper_32: bytes.read_with::<u32>(offset, endian)?,
-                    io_base_upper_16: bytes.read_with::<u16>(offset, endian)?,
-                    io_limit_upper_16: bytes.read_with::<u16>(offset, endian)?,
+                    prefetchable_memory: BridgePrefetchableMemory::new(
+                        bytes.read_with::<u16>(offset, endian)?, // Prefetchable Memory Base
+                        bytes.read_with::<u16>(offset, endian)?, // Prefetchable Memory Limit
+                        bytes.read_with::<u32>(offset, endian)?, // Prefetchable Base Upper 32 Bits
+                        bytes.read_with::<u32>(offset, endian)?, // Prefetchable Limit Upper 32 Bits
+                    ),
+                    io_address_range: BridgeIoAddressRange::new(
+                        io_base, io_limit,
+                        bytes.read_with::<u16>(offset, endian)?, // I/O Base Upper 16 Bits
+                        bytes.read_with::<u16>(offset, endian)?, // I/O Limit Upper 16 Bits
+                    ),
                     reserved: {
                         capabilities_pointer = bytes.read_with::<u8>(offset, endian)? & !0b11;
                         bytes.read_with::<&[u8]>(offset, Bytes::Len(3))?
@@ -289,10 +376,10 @@ impl<'a> TryRead<'a, Endian> for Header {
                         interrupt_pin = bytes.read_with::<InterruptPin>(offset, endian)?;
                         bytes.read_with::<u16>(offset, endian)?.into()
                     },
-                }
+                })
             },
             0x02 => {
-                HeaderType::Cardbus {
+                HeaderType::Cardbus(Cardbus {
                     base_addresses: bytes.read_with::<BaseAddresses<1>>(offset, endian)?,
                     reserved: {
                         capabilities_pointer = bytes.read_with::<u8>(offset, endian)? & !0b11;
@@ -317,7 +404,7 @@ impl<'a> TryRead<'a, Endian> for Header {
                     subsystem_vendor_id: bytes.read_with::<u16>(offset, endian)?,
                     subsystem_device_id: bytes.read_with::<u16>(offset, endian)?,
                     legacy_mode_base_address: bytes.read_with::<u32>(offset, endian)?,
-                }
+                })
             },
             _ => return Err(byte::Error::BadInput { err: "illegal header type" }),
         };
@@ -345,9 +432,9 @@ impl<'a> TryRead<'a, Endian> for Header {
 impl HeaderType {
     pub fn base_addresses(&self) -> bar::Iter {
         match self {
-            Self::Normal { base_addresses, .. } => base_addresses.iter(),
-            Self::Bridge { base_addresses, .. } => base_addresses.iter(),
-            Self::Cardbus { base_addresses, .. } => base_addresses.iter(),
+            Self::Normal(Normal { base_addresses, .. }) => base_addresses.iter(),
+            Self::Bridge(Bridge { base_addresses, .. }) => base_addresses.iter(),
+            Self::Cardbus(Cardbus { base_addresses, .. }) => base_addresses.iter(),
         }
     }
 }
@@ -610,7 +697,7 @@ mod tests {
             },
             capabilities_pointer: 0x80,
             is_multi_function: false,
-            header_type: HeaderType::Normal {
+            header_type: HeaderType::Normal(Normal {
                 base_addresses: BaseAddresses::Basic([
                                     0x93014000,
                                     0x93017000,
@@ -626,7 +713,7 @@ mod tests {
                 reserved: [0,0,0,0,0,0,0],
                 min_grant: 0,
                 max_latency: 0,
-            },
+            }),
             interrupt_line: 0xb,
             interrupt_pin: InterruptPin::IntA,
         };
@@ -708,27 +795,27 @@ mod tests {
                 completion_code: 0x00,
             },
             is_multi_function: false,
-            header_type: HeaderType::Bridge {
+            header_type: HeaderType::Bridge(Bridge {
                 base_addresses: BaseAddresses::Basic([0; 2]),
                 primary_bus_number: 0x04,
                 secondary_bus_number: 0x05,
                 subordinate_bus_number: 0x08,
                 secondary_latency_timer: 0x00,
-                io_base: 0xf1,
-                io_limit: 0x01,
+                io_address_range: BridgeIoAddressRange::IoAddr32 { 
+                    base: 0xf000,
+                    limit: 0x0 // lspci define output as io_limit+0xfff
+                },
                 secondary_status: 0x0000.into(),
                 memory_base: (0x92000000u32 >> 16) as u16,
                 memory_limit: (0x929fffffu32 - 0xfffff >> 16) as u16,
-                prefetchable_memory_base: (0x91000000u64 >> 16) as u16 + 0x01,
-                prefetchable_memory_limit: (0x91ffffffu64 - 0xfffff >> 16) as u16 + 0x01,
-                prefetchable_memory_base_upper_32: 0x00000000,
-                prefetchable_memory_limit_upper_32: 0x00000000,
-                io_base_upper_16: 0x00,
-                io_limit_upper_16: 0x00,
+                prefetchable_memory: BridgePrefetchableMemory::MemAddr64 {
+                    base: 0x91000000,
+                    limit: 0x91ffffff - 0xfffff,
+                },
                 reserved: [0x00; 3],
                 expansion_rom: Default::default(),
                 bridge_control: 0b0000_0000_0001_1011.into(),
-            },
+            }),
             interrupt_line: 0xff, 
             interrupt_pin: InterruptPin::Unused,
         };
@@ -777,7 +864,7 @@ mod tests {
             latency_timer: 41,
             capabilities_pointer: 0x80,
             is_multi_function: true,
-            header_type: HeaderType::Cardbus {
+            header_type: HeaderType::Cardbus(Cardbus {
                 base_addresses: BaseAddresses::Basic([0x35f88000]),
                 reserved: 0x00,
                 secondary_status: 0x0000.into(),
@@ -803,7 +890,7 @@ mod tests {
                 subsystem_vendor_id: 0x3322,
                 subsystem_device_id: 0x5544,
                 legacy_mode_base_address: 0x3322,
-            },
+            }),
             bist: BuiltInSelfTest {
                 is_capable: false,
                 is_running: false,
@@ -814,122 +901,4 @@ mod tests {
         };
         assert_eq!(sample, result);
     }
-
-////    #[test]
-////    fn text_header_type_bridge() {
-////        // PCI bridge [0604]: Renesas Technology Corp. SH7758 PCIe Switch [PS] [1912:001d] (prog-if 00 [Normal decode])
-////        // Control: I/O+ Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx-
-////        // Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
-////        // Latency: 0
-////        // BIST result: 00
-////        // Bus: primary=04, secondary=05, subordinate=08, sec-latency=0
-////        // Memory behind bridge: 92000000-929fffff
-////        // Prefetchable memory behind bridge: 0000000091000000-0000000091ffffff
-////        // Secondary status: 66MHz- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- <SERR- <PERR-
-////        // BridgeCtl: Parity+ SERR+ NoISA- VGA+ MAbort- >Reset- FastB2B-
-////        //         PriDiscTmr- SecDiscTmr- DiscTmrStat- DiscTmrSERREn-
-////        // Capabilities: <access denied>
-////        // Kernel driver in use: pcieport
-////        let data = [
-////            0x12, 0x19, 0x1d, 0x00, 0x07, 0x00, 0x10, 0x00, 0x00, 0x00, 0x04, 0x06, 0x00, 0x00, 0x01, 0x80,
-////            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x05, 0x08, 0x00, 0xf1, 0x01, 0x00, 0x00,
-////            0x00, 0x92, 0x90, 0x92, 0x01, 0x91, 0xf1, 0x91, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-////            0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0x1b, 0x00,
-////        ];
-////        let header: Header = data.read_with(&mut 0, LE).unwrap();
-////        // println!("{:#04X?}", &header);
-
-////        assert_eq!(
-////            ("Bridge", Some("PCI bridge"), Some("Normal decode")),
-////            header.class_code.meaning(),
-////            "PCI bridge [0604]"
-////        );
-////        assert_eq!(0x1912, header.vendor_id, "Renesas Technology Corp.");
-////        assert_eq!(0x001d, header.device_id, "SH7758 PCIe Switch [PS]");
-////        assert_eq!(0x00, header.class_code.interface, "prog-if 00 [Normal decode]");
-
-////        let command_result = header.command.flags()
-////            .take(11)
-////            .map(|f| format!("{}{}", f.value.lspci, if f.is_set { "+" } else { "-" }))
-////            .collect::<Vec<String>>()
-////            .join(" ");
-////        assert_eq!(
-////            "I/O+ Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx-",
-////            command_result,
-////            "Control"
-////        );
-
-////        let status_result = {
-////            let v = header.status.flags()
-////                .map(|f| format!("{}{}", f.value.lspci, if f.is_set { "+" } else { "-" }))
-////                .collect::<Vec<String>>();
-////            format!("{} {}", &v[4..].join(" "), v[3])
-////        };
-////        assert_eq!(
-////            "Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=medium- DEVSEL=slow- >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-",
-////            status_result,
-////            "Status"
-////        );
-
-////        assert_eq!(0x00, header.latency_timer, "Latency");
-
-////        let bist_result =
-////            if header.bist.is_capable {
-////                if header.bist.is_running {
-////                    Err("BIST is running")
-////                } else {
-////                    Ok(header.bist.completion_code)
-////                }
-////            } else {
-////                Err("Not capable")
-////            };
-////        assert_eq!(Ok(0x00), bist_result, "BIST");
-
-////        if let HeaderType::Bridge {
-////            primary_bus_number, secondary_bus_number, subordinate_bus_number, secondary_latency_timer,
-////            memory_base, memory_limit, prefetchable_memory_base, prefetchable_memory_limit, bridge_control,
-////            ..
-////        } = header.header_type {
-////            assert_eq!(
-////                (0x04, 0x05, 0x08, 0x00),
-////                (primary_bus_number, secondary_bus_number, subordinate_bus_number, secondary_latency_timer),
-////                 "Bus: primary=04, secondary=05, subordinate=08, sec-latency=0"
-////            );
-////            assert_eq!(
-////                (0x92000000u32, 0x929fffffu32),
-////                ((memory_base as u32) << 16, ((memory_limit as u32) << 16) + 0xfffff),
-////                "Memory behind bridge: 92000000-929fffff"
-////            );
-////            assert_eq!(
-////                (0x91000000u64, 0x91ffffffu64),
-////                ((prefetchable_memory_base as u64 & !0x0f) << 16, ((prefetchable_memory_limit as u64 & !0x0f) << 16) + 0xfffff),
-////                "Prefetchable memory behind bridge: 0000000091000000-0000000091ffffff" 
-////            );
-
-////            let secondary_status_result = {
-////                let v = header.status.flags()
-////                    .map(|f| format!("{}{}", f.value.lspci, if f.is_set { "+" } else { "-" }))
-////                    .collect::<Vec<String>>();
-////                format!("{} {}", &v[4..].join(" "), v[3])
-////            };
-////            assert_eq!(
-////                "Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=medium- DEVSEL=slow- >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-",
-////                secondary_status_result,
-////                "Secondary status"
-////            );
-
-////            let bridge_control_result = bridge_control.flags()
-////                .take(12)
-////                .map(|f| format!("{}{}", f.value.lspci, if f.is_set { "+" } else { "-" }))
-////                .collect::<Vec<String>>()
-////                .join(" ");
-////            assert_eq!(
-////                "Parity+ SERR+ NoISA- VGA+ VGA16+ MAbort- >Reset- FastB2B- PriDiscTmr- SecDiscTmr- DiscTmrStat- DiscTmrSERREn-",
-////                bridge_control_result,
-////                "Bridge control"
-////            );
-////        } else {
-////            unreachable!();
-////        }
-////    }
 }

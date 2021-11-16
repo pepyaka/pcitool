@@ -14,34 +14,36 @@ use modular_bitfield::prelude::*;
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct BridgeControl {
     /// Controls the bridge’s response to address and data parity errors on the secondary interface
-    parity_error_response_enable: bool,
+    pub parity_error_response_enable: bool,
     /// Controls the forwarding of secondary interface **SERR#** assertions to the primary interface
-    serr_enable: bool,
+    pub serr_enable: bool,
     /// Modifies the response by the bridge to ISA I/O addresses
-    isa_enable: bool,
+    pub isa_enable: bool,
     /// Modifies the response by the bridge to VGA compatible addresses
-    vga_enable: bool,
+    pub vga_enable: bool,
+    /// Modifies the response by the bridge to VGA16 compatible addresses
+    pub vga_16_enable: bool,
     /// Controls the behavior of a bridge when a Master-Abort termination occurs on either
     /// interface while the bridge is the master of the transaction
-    master_abort_mode: bool,
+    pub master_abort_mode: bool,
     /// Forces the assertion of **RST#** on the secondary interface
-    secondary_bus_reset: bool,
+    pub secondary_bus_reset: bool,
     /// Controls ability of the bridge to generate fast back-to-back transactions to different
     /// devices on the secondary interface.
-    fast_back_to_back_enable: bool,
+    pub fast_back_to_back_enable: bool,
     /// Selects the number of PCI clocks that the bridge will wait for a master on the primary
     /// interface to repeat a Delayed Transaction request
-    primary_discard_timer: bool,
+    pub primary_discard_timer: bool,
     ///  Selects the number of PCI clocks that the bridge will wait for a master on the secondary
     ///  interface to repeat a Delayed Transaction request
-    secondary_discard_timer: bool,
+    pub secondary_discard_timer: bool,
     /// This bit is set to a 1 when either the Primary Discard Timer or Secondary Discard Timer
     /// expires and a Delayed Completion is discarded from a queue in the bridge
-    discard_timer_status: bool,
+    pub discard_timer_status: bool,
     /// When set to 1, this bit enables the bridge to assert **SERR#** on the primary interface when
     /// either the Primary Discard Timer or Secondary Discard Timer expires and a Delayed
     /// Transaction is discarded from a queue in the bridge
-    discard_timer_serr_enable: bool,
+    pub discard_timer_serr_enable: bool,
 }
 
 #[bitfield(bits = 16)]
@@ -51,7 +53,7 @@ pub struct BridgeControlProto {
     serr_enable: bool,
     isa_enable: bool,
     vga_enable: bool,
-    pub reserved0: B1,
+    vga_16_enable: bool,
     master_abort_mode: bool,
     secondary_bus_reset: bool,
     fast_back_to_back_enable: bool,
@@ -59,7 +61,7 @@ pub struct BridgeControlProto {
     secondary_discard_timer: bool,
     discard_timer_status: bool,
     discard_timer_serr_enable: bool,
-    pub reserved1: B4,
+    pub reserved: B4,
 }
 
 
@@ -71,6 +73,7 @@ impl From<BridgeControlProto> for BridgeControl {
             serr_enable: proto.serr_enable(),
             isa_enable: proto.isa_enable(),
             vga_enable: proto.vga_enable(),
+            vga_16_enable: proto.vga_16_enable(),
             master_abort_mode: proto.master_abort_mode(),
             secondary_bus_reset: proto.secondary_bus_reset(),
             fast_back_to_back_enable: proto.fast_back_to_back_enable(),
@@ -100,6 +103,7 @@ mod tests {
             serr_enable: true,
             isa_enable: false,
             vga_enable: true,
+            vga_16_enable: false,
             master_abort_mode: true,
             secondary_bus_reset: false,
             fast_back_to_back_enable: true,

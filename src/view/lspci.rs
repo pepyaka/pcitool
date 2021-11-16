@@ -2,12 +2,14 @@
 use clap::Clap;
 
 
+use crate::device::header::{BridgeIoAddressRange, BridgePrefetchableMemory};
 use crate::device::header::bar::IoResource;
 use crate::{
     device::{
         self,
         Device,
         header::{
+            self,
             Command,
             bar::BaseAddressMap,
             HeaderType,
@@ -156,7 +158,7 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
                 write!(f, "\tDeviceName: {}", label)?;
             }
             // Subdevice
-            if let device::HeaderType::Normal { sub_vendor_id, sub_device_id, ..  } 
+            if let device::HeaderType::Normal(header::Normal { sub_vendor_id, sub_device_id, ..  })
                 = device.header.header_type
             {
                 let pciids_sub_vendor = vds.lookup(sub_vendor_id, None, None);
@@ -172,7 +174,7 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
                     (0, None, _) =>
                         write!(f, "\tSubsystem: Device {:04x}\n", sub_device_id)?,
                     (1, _, _) =>
-                        write!(f, "\tSubsystem: {}:{}\n", sub_vendor_id, sub_device_id)?,
+                        write!(f, "\tSubsystem: {:04x}:{:04x}\n", sub_vendor_id, sub_device_id)?,
                     (_, Some(v), Some(d)) => 
                         write!(f, "\tSubsystem: {} {} [{:04x}:{:04x}]\n", v, d, sub_vendor_id, sub_device_id)?,
                     (_, Some(v), None) =>
@@ -189,22 +191,16 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
         let LspciDevice {
             device: Device {
                 header: device::Header {
-                    // vendor_id,
-                    // device_id,
                     command,
                     status,
-                    // revision_id,
-                    // class_code,
                     cache_line_size,
                     latency_timer,
                     header_type,
                     bist,
-                    interrupt_line,
                     interrupt_pin,
                     ..
                 },
                 phy_slot,
-                irq,
                 numa_node,
                 iommu_group,
                 ..
@@ -217,6 +213,7 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
 
         // TODO: Device tree node
 
+        let irq = self.data.device.irq();
         if view.verbose > 1 {
             write!(f, "\tControl: {}\n\tStatus: {}\n",
                 command.display(&View::LspciBasic(*view)),
@@ -224,7 +221,7 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
             )?;
             if command.bus_master {
                 write!(f, "\tLatency: {}", latency_timer)?;
-                if let HeaderType::Normal { min_grant, max_latency, .. } = header_type {
+                if let HeaderType::Normal(header::Normal { min_grant, max_latency, .. }) = header_type {
                     match (*min_grant as u16 * 250, *max_latency as u16 * 250) {
                         (0, 0) => Ok(()),
                         (min, 0) => write!(f, " ({}ns min)", min),
@@ -233,24 +230,33 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
                     }?;
                 }
                 if cache_line_size != &0 {
-                    write!(f, ", Cache Line Size: {} bytes\n", cache_line_size * 4)?;
+                    write!(f, ", Cache Line Size: {} bytes", cache_line_size * 4)?;
                 }
-                match (interrupt_pin, irq) {
-                    (InterruptPin::Unused, Some(irq)) =>
-                        write!(f, "\tInterrupt: pin ? routed to IRQ {}\n", irq)?,
-                    (&pin, Some(irq)) => {
-                        if let Some(pin) = char::from_u32(('A' as u32) + (u8::from(pin) as u32) - 1) {
-                            write!(f, "\tInterrupt: pin {} routed to IRQ {}\n", pin, irq)?;
-                        }
-                    },
-                    _ => (),
-                };
-                if let Some(numa_node) = numa_node {
-                    write!(f, "\tNUMA node: {}\n", numa_node)?;
-                }
-                if let Some(iommu_group) = iommu_group {
-                    write!(f, "\tIOMMU group: {}\n", iommu_group)?;
-                }
+                write!(f, "\n")?;
+            }
+            match interrupt_pin {
+                InterruptPin::Unused if irq != 0 =>
+                    write!(f, "\tInterrupt: pin ? routed to IRQ {}\n", irq)?,
+                InterruptPin::IntA =>
+                    write!(f, "\tInterrupt: pin A routed to IRQ {}\n", irq)?,
+                InterruptPin::IntB =>
+                    write!(f, "\tInterrupt: pin B routed to IRQ {}\n", irq)?,
+                InterruptPin::IntC =>
+                    write!(f, "\tInterrupt: pin C routed to IRQ {}\n", irq)?,
+                InterruptPin::IntD =>
+                    write!(f, "\tInterrupt: pin D routed to IRQ {}\n", irq)?,
+                InterruptPin::Reserved(v) => {
+                    if let Some(pin) = char::from_u32(('A' as u32) + (u8::from(*v) as u32) - 1) {
+                        write!(f, "\tInterrupt: pin {} routed to IRQ {}\n", pin, irq)?;
+                    };
+                },
+                _ => (),
+            };
+            if let Some(numa_node) = numa_node {
+                write!(f, "\tNUMA node: {}\n", numa_node)?;
+            }
+            if let Some(iommu_group) = iommu_group {
+                write!(f, "\tIOMMU group: {}\n", iommu_group)?;
             }
         } else {
             write!(f, "\tFlags: {}{}{}{}{}{}{}",
@@ -265,7 +271,6 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
             if command.bus_master {
                 write!(f, ", latency {}", latency_timer)?;
             }
-            let irq = irq.unwrap_or(*interrupt_line);
             if irq != 0 {
                 #[cfg(target_arch = "sparc64")]
                 write!(f, ", IRQ {:08x}", irq)?;
@@ -289,9 +294,9 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
             }
         }
         match header_type {
-            device::HeaderType::Normal { .. } => self.fmt_header_normal(f),
-            device::HeaderType::Bridge { .. } => self.fmt_header_bridge(f),
-            device::HeaderType::Cardbus { .. } => self.fmt_header_cardbus(f),
+            device::HeaderType::Normal(_) => self.fmt_header_normal(f),
+            device::HeaderType::Bridge(bridge) => self.fmt_header_bridge(f, bridge),
+            device::HeaderType::Cardbus(_) => self.fmt_header_cardbus(f),
         }
     }
     // ref to show_htype0(struct device *d);
@@ -301,23 +306,84 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
         self.fmt_capabilities(f)
     }
     // ref to show_htype1(struct device *d);
-    fn fmt_header_bridge(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let verbose = self.view.verbose;
+    fn fmt_header_bridge(&self, f: &mut fmt::Formatter<'_>, bridge: &header::Bridge) -> fmt::Result {
+        let verbose = self.view.verbose as u64;
+        let header::Bridge {
+            primary_bus_number,
+            secondary_bus_number,
+            subordinate_bus_number,
+            secondary_latency_timer,
+            io_address_range,
+            memory_base,
+            memory_limit,
+            prefetchable_memory,
+            secondary_status,
+            bridge_control,
+            ..
+        }  = bridge;
         self.fmt_bases(f)?;
-        // TODO:
-        // printf("\tBus: primary=%02x, secondary=%02x, subordinate=%02x, sec-latency=%d\n",
-        // show_range("\tI/O behind bridge", io_base, io_limit+0xfff, 0);
-        // show_range("\tMemory behind bridge", mem_base, mem_limit + 0xfffff, 0);
-        // show_range("\tPrefetchable memory behind bridge", pref_base_64, pref_limit_64 + 0xfffff, (pref_type == PCI_PREF_RANGE_TYPE_64));
+        write!(f, "\tBus: primary={:02x}, secondary={:02x}, subordinate={:02x}, sec-latency={}\n",
+            primary_bus_number, secondary_bus_number, subordinate_bus_number, secondary_latency_timer
+        )?;
+        match io_address_range {
+            BridgeIoAddressRange::NotImplemented =>
+                write!(f, "\tI/O behind bridge: [disabled]")?,
+            BridgeIoAddressRange::IoAddr16 { base, limit } => {
+                write!(f, "\tI/O behind bridge:")?;
+                fmt_range(f, *base as u64, *limit as u64 + 0xfff, false, verbose)?
+            },
+            BridgeIoAddressRange::IoAddr32 { base, limit } => {
+                write!(f, "\tI/O behind bridge:")?;
+                fmt_range(f, *base as u64, *limit as u64 + 0xfff, false, verbose)?
+            },
+            BridgeIoAddressRange::Reserved { base, limit } =>
+                write!(f, "\t!!! Unknown I/O range types {:x}/{:x}\n", base, limit)?,
+        }
+        if (memory_base & 0xf) != 0 && (memory_limit & 0xf) != 0 {
+            write!(f, "\t!!! Unknown memory range types {:x}/{:x}\n", memory_base, memory_limit)?;
+        } else {
+            let memory_base = ((memory_base & !0xf) as u64) << 16;
+            let memory_limit = ((memory_limit & !0xf) as u64) << 16;
+            write!(f, "\tMemory behind bridge:")?;
+            fmt_range(f, memory_base, memory_limit + 0xfffff, false, verbose)?;
+        }
+        match prefetchable_memory {
+            BridgePrefetchableMemory::NotImplemented =>
+                write!(f, "\tPrefetchable memory behind bridge: [disabled]")?,
+            BridgePrefetchableMemory::MemAddr32 { base, limit } => {
+                write!(f, "\tPrefetchable memory behind bridge:")?;
+                fmt_range(f, *base as u64, *limit as u64 + 0xfffff, false, verbose)?
+            },
+            BridgePrefetchableMemory::MemAddr64 { base, limit } => {
+                write!(f, "\tPrefetchable memory behind bridge:")?;
+                fmt_range(f, *base, *limit + 0xfffff, true, verbose)?
+            },
+            BridgePrefetchableMemory::Reserved { base, limit } =>
+                write!(f, "\t!!! Unknown prefetchable memory range types {:x}/{:x}\n", base, limit)?,
+        }
         if verbose > 1 {
-            // TODO:
-            // printf("\tSecondary status: 66MHz%c FastB2B%c ParErr%c DEVSEL=%s >TAbort%c <TAbort%c <MAbort%c <SERR%c <PERR%c\n",
+            write!(f, "\tSecondary status: {}\n", secondary_status.display(&View::LspciBasic(*self.view)))?;
         }
         self.fmt_rom(f)?;
         if verbose > 1 {
-            // TODO:
-            // printf("\tBridgeCtl: Parity%c SERR%c NoISA%c VGA%c VGA16%c MAbort%c >Reset%c FastB2B%c\n",
-            // printf("\t\tPriDiscTmr%c SecDiscTmr%c DiscTmrStat%c DiscTmrSERREn%c\n",
+            write!(f,
+                "\tBridgeCtl: Parity{} SERR{} NoISA{} VGA{} VGA16{} MAbort{} >Reset{} FastB2B{}\n",
+                bridge_control.parity_error_response_enable.display(BoolView::PlusMinus),
+                bridge_control.serr_enable.display(BoolView::PlusMinus),
+                bridge_control.isa_enable.display(BoolView::PlusMinus),
+                bridge_control.vga_enable.display(BoolView::PlusMinus),
+                bridge_control.vga_16_enable.display(BoolView::PlusMinus),
+                bridge_control.master_abort_mode.display(BoolView::PlusMinus),
+                bridge_control.secondary_bus_reset.display(BoolView::PlusMinus),
+                bridge_control.fast_back_to_back_enable.display(BoolView::PlusMinus),
+            )?;
+            write!(f,
+                "\t\tPriDiscTmr{} SecDiscTmr{} DiscTmrStat{} DiscTmrSERREn{}\n",
+                bridge_control.primary_discard_timer.display(BoolView::PlusMinus),
+                bridge_control.secondary_discard_timer.display(BoolView::PlusMinus),
+                bridge_control.discard_timer_status.display(BoolView::PlusMinus),
+                bridge_control.discard_timer_serr_enable.display(BoolView::PlusMinus),
+            )?;
         }
         self.fmt_capabilities(f)
     }
@@ -428,12 +494,12 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
     // }
     fn fmt_rom(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.data.device.header.header_type {
-            device::HeaderType::Normal { expansion_rom, .. } => {
+            device::HeaderType::Normal(header::Normal { expansion_rom, .. }) => {
                 if expansion_rom.address != 0 {
                     write!(f, "\tTODO: fmt_rom")?;
                 }
             },
-            device::HeaderType::Bridge { expansion_rom, .. } => {
+            device::HeaderType::Bridge(header::Bridge { expansion_rom, .. }) => {
                 if expansion_rom.address != 0 {
                     write!(f, "\tTODO: fmt_rom")?;
                 }
@@ -443,12 +509,14 @@ impl<'a> MultiView<&'a LspciDevice<'a>, &'a BasicView> {
         Ok(())
     }
     fn fmt_capabilities(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(caps) = self.data.device.capabilities() {
-            for cap in caps {
-                write!(f, "{}", cap.display(&self.view))?;
+        if self.data.device.header.status.capabilities_list {
+            if let Some(caps) = self.data.device.capabilities() {
+                for cap in caps {
+                    write!(f, "{}", cap.display(&self.view))?;
+                }
+            } else {
+                write!(f, "\tCapabilities: <access denied>\n")?;
             }
-        } else {
-            write!(f, "\tCapabilities: <access denied>\n")?;
         }
         Ok(())
     }
@@ -470,21 +538,21 @@ fn fmt_size(f: &mut fmt::Formatter<'_>, x: u64) -> fmt::Result {
     }
 }
 
-// fn fmt_range(f: &mut fmt::Formatter<'_>, base: u64, limit: u64, is_64bit: bool, verbose: u64) -> fmt::Result {
-//     if base <= limit || verbose > 2 {
-//         if is_64bit {
-//             write!(f, " {:016x}-{:016x}", base, limit)?;
-//         } else {
-//             write!(f, " {:08x}-{:08x}", base, limit)?;
-//         }
-//     }
-//     if base <= limit {
-//         fmt_size(f, limit - base + 1)?;
-//     }  else {
-//         write!(f, " [disabled]\n")?;
-//     }
-//     write!(f, "\n")
-// }
+fn fmt_range(f: &mut fmt::Formatter<'_>, base: u64, limit: u64, is_64bit: bool, verbose: u64) -> fmt::Result {
+    if base <= limit || verbose > 2 {
+        if is_64bit {
+            write!(f, " {:016x}-{:016x}", base, limit)?;
+        } else {
+            write!(f, " {:08x}-{:08x}", base, limit)?;
+        }
+    }
+    if base <= limit {
+        fmt_size(f, limit - base + 1)?;
+    }  else {
+        write!(f, " [disabled]")?;
+    }
+    write!(f, "\n")
+}
 
 
 #[cfg(test)]
@@ -517,7 +585,7 @@ mod tests {
             let data = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/device/8086:9dc8/config"));
             let mut cs: ConfigurationSpace = data.read_with(&mut 0, LE).unwrap();
             // Emulate sized base_addresses
-            if let device::HeaderType::Normal { ref mut base_addresses, .. } = &mut cs.header.header_type {
+            if let device::HeaderType::Normal(header::Normal { ref mut base_addresses, .. }) = &mut cs.header.header_type {
                 let mut sized: [BaseAddressSized; 6] = Default::default();
                 if let BaseAddresses::Basic(array) = base_addresses {
                     for (i, &data) in array.iter().enumerate() {

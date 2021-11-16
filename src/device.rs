@@ -94,6 +94,13 @@ impl Device {
         ddr.filter(|_| ptr > 0)
             .map(|ddr| Capabilities::new(&ddr, ptr))
     }
+    pub fn irq(&self) -> u8 {
+        if let Some(irq) = self.irq {
+            irq
+        } else {
+            self.header.interrupt_line
+        }
+    }
 }
 impl PartialOrd for Device {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
