@@ -5,7 +5,7 @@ use thiserror::Error;
 #[cfg(feature = "clap")]
 use clap::ArgEnum;
 
-use crate::device::{Device, Address, header::HeaderTypeError};
+use crate::device::{Device, Address, };
 
 //pub mod dev_port;
 // pub mod sysfs;
@@ -41,8 +41,6 @@ pub enum AccessError {
     Platform,
     #[error("I/O problem {0}")]
     Io(#[from] io::Error),
-    #[error("device header {0}")]
-    DeviceHeaderType(#[from] HeaderTypeError),
 }
 
 #[derive(Debug)]

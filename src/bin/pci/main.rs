@@ -1,5 +1,3 @@
-use std::path::{Path, PathBuf};
-
 use clap::Clap;
 
 use libpci::{
@@ -9,10 +7,7 @@ use libpci::{
         dump::Dump
     },
     pciids::{PciIds, VendorDeviceSubsystem},
-    view::{
-        DisplayMultiView,
-        lspci::LspciDevice,
-    }
+    view::DisplayMultiViewBasic
 };
 
 mod args;
@@ -39,8 +34,7 @@ fn main() {
                         basic_view.always_domain_number = true;
                     }
                     for device in devices {
-                        let device = LspciDevice { device: &device, vds: &vds };
-                        print!("{}", device.display(&basic_view));
+                        print!("{}", device.display((basic_view, &vds)));
                     }
                 },
                 (Some(PreferredMethod::Dump), None) => todo!("Read dump from stdin"),

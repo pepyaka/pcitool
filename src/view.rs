@@ -5,7 +5,7 @@ use crate::device;
 
 pub mod lspci;
 
-mod header;
+// mod header;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Verbose(pub usize);
@@ -17,31 +17,33 @@ pub struct MultiView<T, V> {
     pub view: V,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum View {
-    Basic,
-    Extended,
-    LspciBasic(lspci::BasicView),
-    LspciMachineSimple,
-}
-
 pub trait DisplayMultiView<'a> {
     type Data;
     type View;
     fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View>;
 }
 
+pub trait DisplayMultiViewBasic<V> where Self: Sized {
+    fn display(&self, view: V) -> MultiView<&Self, V> {
+        MultiView { data: self, view }
+    }
+}
 
+
+/// Boolean ,ultiple view
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BoolView {
+    // true: ✓, false: ✗
     CheckMark,
+    /// true: +, false: -
     PlusMinus,
+    /// Any string
     Str(&'static str),
 }
 
-impl<'a> fmt::Display for MultiView<bool, BoolView> {
+impl DisplayMultiViewBasic<BoolView> for bool {}
+impl<'a> fmt::Display for MultiView<&'a bool, BoolView> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match (self.data, self.view) {
             (false, BoolView::CheckMark) => write!(f, "✗"),
@@ -53,14 +55,6 @@ impl<'a> fmt::Display for MultiView<bool, BoolView> {
         }
     }
 }
-impl<'a> DisplayMultiView<'a> for bool {
-    type Data = bool;
-    type View = BoolView;
-    fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View> {
-        MultiView { data: *self, view, }
-    }
-}
-
 
 
 use device::Address;
@@ -90,61 +84,11 @@ impl<'a> fmt::Display for MultiView<&'a Address, Domain> {
 }
 
 
-use device::capabilities::message_signaled_interrups::{
-    MessageSignaledInterrups,
-    MessageAddress
-};
-
-impl<'a> DisplayMultiView<'a> for MessageSignaledInterrups {
-    type Data = &'a MessageSignaledInterrups;
-    type View = Verbose;
-    fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View> {
-        MultiView { data: self, view, }
-    }
-}
-impl<'a> fmt::Display for MultiView<&'a MessageSignaledInterrups, Verbose> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (ctrl, addr, data, mask, pend) = (
-            &self.data.message_control, 
-            &self.data.message_address, 
-            &self.data.message_data, 
-            &self.data.mask_bits, 
-            &self.data.pending_bits
-        );
-        let Verbose(verbose) = self.view;
-        write!(f, "MSI: Enable{} Count={}/{} Maskable{} 64bit{}\n", 
-            ctrl.enable.display(BoolView::PlusMinus),
-            ctrl.multiple_message_enable as u8,
-            ctrl.multiple_message_capable as u8,
-            ctrl.per_vector_masking_capable.display(BoolView::PlusMinus),
-            matches!(addr, MessageAddress::Qword(_)).display(BoolView::PlusMinus),
-        )?;
-        if verbose < 2 {
-            return Ok(())
-        }
-        match addr {
-            MessageAddress::Dword(v) => {
-                write!(f, "\t\tAddress: {:08x}  Data: {:04x}\n", v, data)?;
-            },
-            MessageAddress::Qword(v) => {
-                write!(f, "\t\tAddress: {:016x}  Data: {:04x}\n", v, data)?;
-            },
-        }
-        if let (Some(m), Some(p)) = (mask, pend) {
-            write!(f, "\t\tMasking: {:08x}  Pending: {:08x}\n", m, p)?;
-        }
-        Ok(())
-    }
-}
-
-
-
-
-
 
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use pcics::capabilities::MessageSignaledInterrups;
     use super::*;
 
     #[test]

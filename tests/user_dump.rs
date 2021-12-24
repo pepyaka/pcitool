@@ -13,7 +13,12 @@ macro_rules! read_from_dump {
             // #[ignore] 
             #[test]
             fn $fname() {
-                ls(&format!("-F {}/tests/data/lspci.{}.dump {}", env!("CARGO_MANIFEST_DIR"), $x, $args));
+                ls(&format!(
+                    "-F {}/tests/data/machine/362f18e/out.{}.txt {}",
+                    env!("CARGO_MANIFEST_DIR"),
+                    $x,
+                    $args,
+                ));
             }
         )*
     }
@@ -44,18 +49,19 @@ read_from_dump! {
     user_xxx_dump_nnv:   "xxx", "-nnv",
     user_xxx_dump_nnvv:  "xxx", "-nnvv",
     user_xxx_dump_nnvvv: "xxx", "-nnvvv",
-    // user_xxx_dump:       "xxx", "",
-    // user_xxx_dump_n:     "xxx", "-n",
-    // user_xxx_dump_nn:    "xxx", "-nn",
-    // user_xxx_dump_v:     "xxx", "-v",
-    // user_xxx_dump_vv:    "xxx", "-vv",
-    // user_xxx_dump_vvv:   "xxx", "-vvv",
-    // user_xxx_dump_nv:    "xxx", "-nv",
-    // user_xxx_dump_nvv:   "xxx", "-nvv",
-    // user_xxx_dump_nvvv:  "xxx", "-nvvv",
-    // user_xxx_dump_nnv:   "xxx", "-nnv",
-    // user_xxx_dump_nnvv:  "xxx", "-nnvv",
-    // user_xxx_dump_nnvvv: "xxx", "-nnvvv",
+    user_xxxx_dump:       "xxxx", "",
+    user_xxxx_dump_n:     "xxxx", "-n",
+    user_xxxx_dump_nn:    "xxxx", "-nn",
+    user_xxxx_dump_v:     "xxxx", "-v",
+    // This test cover most of issues
+    user_xxxx_dump_vv:    "xxxx", "-vv",
+    user_xxxx_dump_vvv:   "xxxx", "-vvv",
+    user_xxxx_dump_nv:    "xxxx", "-nv",
+    user_xxxx_dump_nvv:   "xxxx", "-nvv",
+    user_xxxx_dump_nvvv:  "xxxx", "-nvvv",
+    user_xxxx_dump_nnv:   "xxxx", "-nnv",
+    user_xxxx_dump_nnvv:  "xxxx", "-nnvv",
+    user_xxxx_dump_nnvvv: "xxxx", "-nnvvv",
 }
 
 fn ls(args_str: &str) {

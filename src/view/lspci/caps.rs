@@ -1,33 +1,55 @@
+use core::fmt;
 
-use crate::view::*;
-use crate::device::capabilities::*;
-use super::BasicView;
+use crate::{pciids::VendorDeviceSubsystem, device::capabilities::msi_x::Bir};
+use super::{BasicView, DisplayMultiViewBasic, MultiView};
+use crate::view::{Verbose, BoolView};
+use crate::device::{capabilities::*, Device};
 
 
-impl<'a> DisplayMultiView<'a> for Capability<'a> {
-    type Data = &'a Capability<'a>;
-    type View = &'a BasicView;
-    fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View> {
-        MultiView { data: self, view, }
-    }
+pub struct CapabilityView<'a> {
+    pub view: &'a BasicView,
+    pub device: &'a Device,
+    pub vds: &'a VendorDeviceSubsystem,
 }
-impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a BasicView> {
+
+// impl<'a> DisplayMultiView<'a> for Capability<'a> {
+//     type Data = &'a Capability<'a>;
+//     type View = (&'a BasicView, LspciDevice<'a>);
+//     fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View> {
+//         MultiView { data: self, view, }
+//     }
+// }
+impl<'a> DisplayMultiViewBasic<&'a CapabilityView<'a>> for Capability<'a> {}
+impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a CapabilityView<'a>> {
    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+       let CapabilityView { view, device, vds } = self.view;
        write!(f, "\tCapabilities: [{:02x}] ", self.data.pointer)?;
-       let verbose = Verbose(self.view.verbose);
+       let verbose = Verbose(view.verbose);
        match &self.data.kind {
            CapabilityKind::PowerManagementInterface(c) =>
                write!(f, "{}", c.display(verbose)),
-           CapabilityKind::VendorSpecific(c) => {
-               let view = VendorSpecificView {
-                   verbose: self.view.verbose,
-                   vendor_id: 0,
-                   device_id: 0,
-               };
-               write!(f, "{}", c.display(&view))
-           },
            CapabilityKind::MessageSignaledInterrups(c) =>
                write!(f, "{}", c.display(verbose)),
+           CapabilityKind::VendorSpecific(c) => {
+               let vc = c.vendor_capability(device.header.vendor_id, device.header.device_id);
+               write!(f, "{}", vc.display(()))
+           },
+           CapabilityKind::BridgeSubsystemVendorId(c) => {
+               write!(f, "{}\n", c.display((view.as_numbers, vds)))
+           },
+           CapabilityKind::PciExpress(c) => {
+               let view = PciExpressView {
+                   verbose: view.verbose,
+                   device,
+               };
+               write!(f, "{}", c.display(view))
+           },
+           CapabilityKind::MsiX(c) => {
+               write!(f, "{}", c.display(verbose))
+           },
+           CapabilityKind::AdvancedFeatures(c) => {
+               write!(f, "{}", c.display(verbose))
+           },
            CapabilityKind::Reserved(cid) =>
                write!(f, "{:#02x}\n", cid),
        }
@@ -35,7 +57,8 @@ impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a BasicView> {
 }
 
 
-
+// 01h PCI Power Management Interface
+impl<'a> DisplayMultiViewBasic<Verbose> for PowerManagementInterface {}
 impl<'a> fmt::Display for MultiView<&'a PowerManagementInterface, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (caps, ctrl, br, d) = 
@@ -74,39 +97,52 @@ impl<'a> fmt::Display for MultiView<&'a PowerManagementInterface, Verbose> {
         Ok(())
     }
 }
-impl<'a> DisplayMultiView<'a> for PowerManagementInterface {
-    type Data = &'a PowerManagementInterface;
-    type View = Verbose;
-    fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View> {
-        MultiView { data: self, view, }
-    }
-}
 
-
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct VendorSpecificView {
-    vendor_id: u16,
-    device_id: u16,
-    verbose: usize,
-}
-
-impl<'a> DisplayMultiView<'a> for VendorSpecific<'a> {
-    type Data = &'a VendorSpecific<'a>;
-    type View = &'a VendorSpecificView;
-    fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View> {
-        MultiView { data: self, view, }
-    }
-}
-impl<'a> fmt::Display for MultiView<&'a VendorSpecific<'a>, &'a VendorSpecificView> {
+// 05h Message Signaled Interrupts
+impl<'a> DisplayMultiViewBasic<Verbose> for MessageSignaledInterrups {}
+impl<'a> fmt::Display for MultiView<&'a MessageSignaledInterrups, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use vendor_specific::{VendorCapabilty, Virtio};
-        write!(f, "Vendor Specific Information: ")?;
-        let vc = VendorCapabilty::new(
-            &self.data.0,
-            self.view.vendor_id,
-            self.view.device_id
+        let (ctrl, addr, data, mask, pend) = (
+            &self.data.message_control, 
+            &self.data.message_address, 
+            &self.data.message_data, 
+            &self.data.mask_bits, 
+            &self.data.pending_bits
         );
-        match vc {
+        let Verbose(verbose) = self.view;
+        write!(f, "MSI: Enable{} Count={}/{} Maskable{} 64bit{}\n", 
+            ctrl.enable.display(BoolView::PlusMinus),
+            ctrl.multiple_message_enable as u8,
+            ctrl.multiple_message_capable as u8,
+            ctrl.per_vector_masking_capable.display(BoolView::PlusMinus),
+            matches!(addr, MessageAddress::Qword(_)).display(BoolView::PlusMinus),
+        )?;
+        if verbose < 2 {
+            return Ok(())
+        }
+        match addr {
+            MessageAddress::Dword(v) => {
+                write!(f, "\t\tAddress: {:08x}  Data: {:04x}\n", v, data)?;
+            },
+            MessageAddress::Qword(v) => {
+                write!(f, "\t\tAddress: {:016x}  Data: {:04x}\n", v, data)?;
+            },
+        }
+        if let (Some(m), Some(p)) = (mask, pend) {
+            write!(f, "\t\tMasking: {:08x}  Pending: {:08x}\n", m, p)?;
+        }
+        Ok(())
+    }
+}
+
+
+// 09h Vendor Specific
+// Used data from internal VendorCapabilty struct
+impl<'a> DisplayMultiViewBasic<()> for VendorCapabilty<'a> {}
+impl<'a> fmt::Display for MultiView<&'a VendorCapabilty<'a>, ()> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Vendor Specific Information: ")?;
+        match self.data {
             VendorCapabilty::Virtio(virtio) => match virtio {
                 Virtio::CommonCfg { bar, offset, size } => write!(f, 
                     "VirtIO: CommonCfg\n\t\tBAR={} offset={:08x} size={:08x}\n", 
@@ -135,19 +171,113 @@ impl<'a> fmt::Display for MultiView<&'a VendorSpecific<'a>, &'a VendorSpecificVi
                     bar, offset, size
                 ),
             },
-            vendor_specific::VendorCapabilty::Unspecified(slice) =>
+            VendorCapabilty::Unspecified(slice) =>
                 write!(f, "Len={:02x} <?>\n", slice.len() + 1),
         }
     }
 }
 
 
+// 0Dh PCI Bridge Subsystem Vendor ID
+impl<'a> DisplayMultiViewBasic<(usize, &'a VendorDeviceSubsystem)> for BridgeSubsystemVendorId {}
+impl<'a> fmt::Display for MultiView<&'a BridgeSubsystemVendorId, (usize, &'a VendorDeviceSubsystem)> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (as_numbers, vds) = self.view;
+        let BridgeSubsystemVendorId {
+            subsystem_vendor_id: vendor_id,
+            subsystem_id: device_id,
+            ..
+        } = self.data;
+        let pciids_vendor = vds.lookup(*vendor_id, None, None);
+        let pciids_device = vds.lookup(*vendor_id, *device_id, None);
+        write!(f, "Subsystem:")?;
+        match (as_numbers, pciids_vendor, pciids_device) {
+            (0, Some(v), Some(d)) => write!(f, " {} {}", v, d),
+            (0, Some(v), None) => write!(f, " {} Device {:04x}", v, device_id),
+            (1, _, _) => write!(f, " {:04x}:{:04x}", vendor_id, device_id),
+            (_, Some(v), Some(d)) => write!(f, " {} {} [{:04x}:{:04x}]", v, d, vendor_id, device_id),
+            (_, Some(v), None) => write!(f, " {} Device [{:04x}:{:04x}]", v, vendor_id, device_id),
+            _ => write!(f, " [{:04x}:{:04x}]", vendor_id, device_id),
+        }
+    }
+}
+
+
+// 10h PCI Express 
+mod pci_express;
+pub use pci_express::*;
+use pcics::capabilities::message_signaled_interrups::MessageAddress;
+use pcics::capabilities::vendor_specific::{VendorCapabilty, Virtio};
+
+// 11h MSI-X
+impl DisplayMultiViewBasic<Verbose> for MsiX {}
+impl fmt::Display for MultiView<&MsiX, Verbose> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let MsiX { message_control: ctrl, table: tbl, pending_bit_array: pba } = self.data;
+        write!(f,
+            "MSI-X: Enable{} Count={} Masked{}\n",
+            ctrl.msi_x_enable.display(BoolView::PlusMinus),
+            ctrl.table_size + 1,
+            ctrl.function_mask.display(BoolView::PlusMinus),
+        )?;
+        if self.view.0 > 1 {
+            write!(f,
+                "\t\tVector table: BAR={} offset={:08x}\n\t\tPBA: BAR={} offset={:08x}\n",
+                tbl.bir.display(()),
+                tbl.offset,
+                pba.bir.display(()),
+                pba.offset,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+// 13h Advanced Features (AF)
+impl DisplayMultiViewBasic<Verbose> for AdvancedFeatures {}
+impl fmt::Display for MultiView<&AdvancedFeatures, Verbose> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let AdvancedFeatures { capabilities: caps, control: ctrl, status: st, .. } = self.data;
+        write!(f, "PCI Advanced Features\n")?;
+        if self.view.0 > 1 {
+            write!(f,
+                "\t\tAFCap: TP{} FLR{}\n\t\tAFCtrl: FLR{}\n\t\tAFStatus: TP{}\n",
+                caps.transactions_pending.display(BoolView::PlusMinus),
+                caps.function_level_reset.display(BoolView::PlusMinus),
+                ctrl.initiate_flr.display(BoolView::PlusMinus),
+                st.transactions_pending.display(BoolView::PlusMinus),
+            )?;
+        }
+        Ok(())
+    }
+}
+
+
+impl DisplayMultiViewBasic<()> for Bir {}
+impl fmt::Display for MultiView<&Bir, ()> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = match self.data {
+            Bir::Bar10h => 0,
+            Bir::Bar14h => 1,
+            Bir::Bar18h => 2,
+            Bir::Bar1Ch => 3,
+            Bir::Bar20h => 4,
+            Bir::Bar24h => 5,
+            Bir::Reserved(v) => *v,
+        };
+        write!(f, "{}", n)
+    }
+}
 
 
 #[cfg(test)]
 mod tests {
+    use crate::device::Address;
+    use crate::device::ConfigurationSpace;
+    use crate::device::Device;
     use crate::device::ECS_OFFSET;
     use crate::device::DDR_OFFSET;
+    use crate::pciids::PciIds;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -203,15 +333,11 @@ mod tests {
             0x04, 0x00, 0x00, 0x00  // multiplier
         ];
         let vs = VendorSpecific(&data[3..]);
-        let view = VendorSpecificView {
-            verbose: 3,
-            vendor_id: 0x1af4,
-            device_id: 0x1045,
-        };
+        let vc = vs.vendor_capability(0x1af4, 0x1045);
         assert_eq!(
             "Vendor Specific Information: VirtIO: Notify\n\
             \t\tBAR=4 offset=00003000 size=00001000 multiplier=00000004\n",
-            vs.display(&view).to_string()
+            vc.display(()).to_string()
         );
     }
 
@@ -223,16 +349,33 @@ mod tests {
         // Capabilities: [80] Vendor Specific Information: Len=14 <?>
         // Capabilities: [60] MSI: Enable+ Count=1/1 Maskable- 64bit+
         //         Address: 00000000fee00578  Data: 0000
-        let data = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/device/8086:9dc8/config"));
-        let ddr = data[DDR_OFFSET..ECS_OFFSET].try_into().unwrap();
-        let caps = Capabilities::new(&ddr, 0x50);
-        let view = lspci::BasicView { verbose: 3, ..Default::default() };
-        let s = caps.map(|c| format!("{}", c.display(&view)))
+        let data =
+            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),
+                "/tests/data/device/8086:9dc8/config"
+            ));
+        let vds = 
+            &PciIds::new(include_str!("/usr/share/hwdata/pci.ids").lines())
+                .collect::<(VendorDeviceSubsystem, _)>().0;
+        let device = {
+            let cs: ConfigurationSpace = data.read_with(&mut 0, LE).unwrap();
+            let address: Address = "00:1f.3".parse().unwrap();
+            &Device::new(address, cs)
+        };
+        let ddr = &data[DDR_OFFSET..ECS_OFFSET];
+        let offset = data[0x34];
+        let caps = Capabilities::new(ddr, offset);
+        let view = CapabilityView {
+            view: &BasicView { verbose: 3, ..Default::default() },
+            device, vds,
+        };
+        let s = caps.map(|c| c.display(&view).to_string())
             .collect::<String>();
         let result = s.lines()
             .collect::<Vec<_>>();
-        let sample = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/device/8086:9dc8/caps.lspci.vvv.txt"))
-            .lines().collect::<Vec<_>>();
+        let sample =
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"),
+                "/tests/data/device/8086:9dc8/caps.lspci.vvv.txt"
+            )).lines().collect::<Vec<_>>();
         assert_eq!(sample, result);
     }
 }
