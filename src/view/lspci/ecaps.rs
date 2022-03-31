@@ -13,6 +13,8 @@ use pcics::{
         VendorSpecificExtendedCapability,
         AddressTranslationServices, PageRequestInterface, AccessControlServices,
         PrecisionTimeMeasurement, DownstreamPortContainment, PowerBudgeting,
+        AlternativeRoutingIdInterpretation, TphRequester,
+        tph_requester::StTableLocation,
     }
 };
 
@@ -65,13 +67,21 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, EcapsView<'a>> {
                 write!(f, "{}", c.display(())),
             ExtendedCapabilityKind::PowerBudgeting(c) =>
                 write!(f, "{}", c.display(())),
+            ExtendedCapabilityKind::RootComplexLinkDeclaration(c) =>
+                write!(f, "{}", c.display(Verbose(verbose))),
             ExtendedCapabilityKind::VendorSpecificExtendedCapability(c) =>
                 write!(f, "{}", c.display(())),
             ExtendedCapabilityKind::AccessControlServices(c) =>
                 write!(f, "{}", c.display(Verbose(verbose))),
+            ExtendedCapabilityKind::AlternativeRoutingIdInterpretation(c) =>
+                write!(f, "{}", c.display(Verbose(verbose))),
             ExtendedCapabilityKind::AddressTranslationServices(c) =>
                 write!(f, "{}", c.display(Verbose(verbose))),
+            ExtendedCapabilityKind::SingleRootIoVirtualization(c) =>
+                write!(f, "{}", c.display(Verbose(verbose))),
             ExtendedCapabilityKind::PageRequestInterface(c) =>
+                write!(f, "{}", c.display(Verbose(verbose))),
+            ExtendedCapabilityKind::TphRequester(c) =>
                 write!(f, "{}", c.display(Verbose(verbose))),
             ExtendedCapabilityKind::LatencyToleranceReporting(c) =>
                 write!(f, "{}", c.display(Verbose(verbose))),
@@ -120,7 +130,16 @@ impl<'a> fmt::Display for MultiView<&'a PowerBudgeting, ()> {
     }
 }
 
-/// 000Bh Vendor-Specific Extended Capability (VSEC)
+// 0005h Root Complex Link Declaration
+mod rclink;
+
+// 0006h Root Complex Internal Link Control
+// 0007h Root Complex Event Collector Endpoint Association
+// 0008h Multi-Function Virtual Channel (MFVC)
+// 0009h Virtual Channel (VC) – used if an MFVC Extended Cap structure is present in the device
+// 000Ah Root Complex Register Block (RCRB) Header
+
+// 000Bh Vendor-Specific Extended Capability (VSEC)
 impl<'a> DisplayMultiViewBasic<()> for VendorSpecificExtendedCapability<'a> {}
 impl<'a> fmt::Display for MultiView<&'a VendorSpecificExtendedCapability<'a>, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -134,7 +153,9 @@ impl<'a> fmt::Display for MultiView<&'a VendorSpecificExtendedCapability<'a>, ()
     }
 }
 
-/// 000Dh Access Control Services (ACS) 
+// 000Ch Configuration Access Correlation (CAC) – defined by the Trusted Configuration Space (TCS) for PCI Express ECN, which is no longer supported
+
+// 000Dh Access Control Services (ACS) 
 impl<'a> DisplayMultiViewBasic<Verbose> for AccessControlServices<'a> {}
 impl<'a> fmt::Display for MultiView<&'a AccessControlServices<'a,>, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -171,7 +192,35 @@ impl<'a> fmt::Display for MultiView<&'a AccessControlServices<'a,>, Verbose> {
     }
 }
 
-/// 000Fh Address Translation Services (ATS) 
+// 000Eh Alternative Routing-ID Interpretation (ARI)
+impl<'a> DisplayMultiViewBasic<Verbose> for AlternativeRoutingIdInterpretation {}
+impl<'a> fmt::Display for MultiView<&'a AlternativeRoutingIdInterpretation, Verbose> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let verbose = self.view.0;
+        writeln!(f, "Alternative Routing-ID Interpretation (ARI)")?;
+        if verbose < 2 {
+            return Ok(());
+        }
+        let AlternativeRoutingIdInterpretation {
+            ari_capability: caps,
+            ari_control: ctrl,
+        } = self.data;
+        writeln!(f,
+            "\t\tARICap:\tMFVC{} ACS{}, Next Function: {}", 
+            caps.mfvc_function_groups_capability.display(BoolView::PlusMinus),
+            caps.acs_function_groups_capability.display(BoolView::PlusMinus),
+            caps.next_function_number,
+        )?;
+        writeln!(f,
+            "\t\tARICtl:\tMFVC{} ACS{}, Function Group: {}",
+            ctrl.mfvc_function_groups_enable.display(BoolView::PlusMinus),
+            ctrl.acs_function_groups_enable.display(BoolView::PlusMinus),
+            ctrl.function_group,
+        )
+    }
+}
+
+// 000Fh Address Translation Services (ATS) 
 impl<'a> DisplayMultiViewBasic<Verbose> for AddressTranslationServices {}
 impl<'a> fmt::Display for MultiView<&'a AddressTranslationServices, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -196,7 +245,13 @@ impl<'a> fmt::Display for MultiView<&'a AddressTranslationServices, Verbose> {
     }
 }
 
-/// 0013h Page Request Interface (PRI)
+// 0010h Single Root I/O Virtualization (SR-IOV)
+mod sr_iov;
+
+// 0011h Multi-Root I/O Virtualization (MR-IOV) – defined in the Multi-Root I/O Virtualization and Sharing Specification
+// 0012h Multicast
+
+// 0013h Page Request Interface (PRI)
 impl<'a> DisplayMultiViewBasic<Verbose> for PageRequestInterface {}
 impl<'a> fmt::Display for MultiView<&'a PageRequestInterface, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -227,6 +282,45 @@ impl<'a> fmt::Display for MultiView<&'a PageRequestInterface, Verbose> {
             outstanding_page_request_capacity,
             outstanding_page_request_allocation,
         )
+    }
+}
+
+// 0014h Reserved for AMD
+// 0015h Resizable BAR
+// 0016h Dynamic Power Allocation (DPA)
+
+// 0017h TPH Requester
+impl<'a> DisplayMultiViewBasic<Verbose> for TphRequester<'a> {}
+impl<'a> fmt::Display for MultiView<&'a TphRequester<'a>, Verbose> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let verbose = self.view.0;
+        writeln!(f, "Transaction Processing Hints")?;
+        if verbose < 2 {
+            return Ok(());
+        }
+        let TphRequester {
+            tph_requester_capability: caps,
+            ..
+        } = self.data;
+        if caps.interrupt_vector_mode_supported {
+            writeln!(f, "\t\tInterrupt vector mode supported")?;
+        }
+        if caps.device_specific_mode_supported {
+            writeln!(f, "\t\tDevice specific mode supported")?;
+        }
+        if caps.extended_tph_requester_supported {
+            writeln!(f, "\t\tExtended requester support")?;
+        }
+        match caps.st_table_location {
+            StTableLocation::NotPresent =>
+                writeln!(f, "\t\tNo steering table available"),
+            StTableLocation::TphRequesterCapability =>
+                writeln!(f, "\t\tSteering table in TPH capability structure"),
+            StTableLocation::MsiXTable =>
+                writeln!(f, "\t\tSteering table in MSI-X table"),
+            StTableLocation::Reserved =>
+                writeln!(f, "\t\tReserved steering table location"),
+        }
     }
 }
 
@@ -288,6 +382,8 @@ impl<'a> fmt::Display for MultiView<&'a SecondaryPciExpress<'a>, Verbose> {
     }
 }
 
+// 001Ah Protocol Multiplexing (PMUX)
+
 // 001Bh Process Address Space ID (PASID) 
 impl<'a> DisplayMultiViewBasic<Verbose> for ProcessAddressSpaceId {}
 impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
@@ -316,6 +412,8 @@ impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
         Ok(())
     }
 }
+
+// 001Ch LN Requester (LNR)
 
 // 001Dh Downstream Port Containment (DPC)
 impl<'a> DisplayMultiViewBasic<Verbose> for DownstreamPortContainment {}
@@ -479,3 +577,16 @@ impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
     }
 }
 
+// 0020h PCI Express over M-PHY (M-PCIe)
+// 0021h FRS Queueing
+// 0022h Readiness Time Reporting
+// 0023h Designated Vendor-Specific Extended Capability
+// 0024h VF Resizable BAR
+// 0025h Data Link Feature
+// 0026h Physical Layer 16.0 GT/s
+// 0027h Lane Margining at the Receiver
+// 0028h Hierarchy ID
+// 0029h Native PCIe Enclosure Management (NPEM)
+// 002Ah Physical Layer 32.0 GT/s
+// 002Bh Alternate Protocol
+// 002Ch System Firmware Intermediary (SFI)

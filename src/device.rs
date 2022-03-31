@@ -17,7 +17,7 @@ pub mod address;
 pub use address::Address;
 
 use pcics::capabilities::{pci_express, CapabilityKind};
-use pcics::header::bar::BaseAddressType;
+use pcics::header::BaseAddressType;
 pub use pcics::header::{self, Header, HeaderType};
 // pub mod header;
 // pub use header::{Header, HeaderType};
@@ -92,13 +92,17 @@ impl Device {
         }
     }
     pub fn has_mem_bar(&self) -> bool {
-        self.header.header_type.base_addresses().any(|ba| {
-            let is_non_zero_size = self.resource.as_ref()
-                .and_then(|r| r.entries.get(ba.region))
-                .filter(|e| e.size() > 0).is_some();
-            let is_non_io_space = !matches!(ba.base_address_type, BaseAddressType::IoSpace { .. });
-            is_non_zero_size && is_non_io_space
-        })
+        if let Some(mut base_addresses) = self.header.header_type.base_addresses() {
+            base_addresses.any(|ba| {
+                let is_non_zero_size = self.resource.as_ref()
+                    .and_then(|r| r.entries.get(ba.region))
+                    .filter(|e| e.size() > 0).is_some();
+                let is_non_io_space = !matches!(ba.base_address_type, BaseAddressType::IoSpace { .. });
+                is_non_zero_size && is_non_io_space
+            })
+        } else {
+            false
+        }
     }
     pub fn pci_express_device_type(&self) -> Option<pci_express::DeviceType> {
         self.capabilities().and_then(|mut caps| {

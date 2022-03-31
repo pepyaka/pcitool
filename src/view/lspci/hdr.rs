@@ -1,6 +1,6 @@
 use core::fmt;
 
-use pcics::header::{Command, Primary, SecondaryCardbus, SecondaryBridge, Status};
+use pcics::header::{Command, Status, DevselTiming};
 
 use crate::view::{DisplayMultiViewBasic, MultiView, BoolView};
 
@@ -25,8 +25,8 @@ impl<'a> fmt::Display for MultiView<&'a Command, ()> {
     }
 }
 
-impl<'a> DisplayMultiViewBasic<()> for Status<Primary> {}
-impl<'a> fmt::Display for MultiView<&'a Status<Primary>, ()> {
+impl<'a> DisplayMultiViewBasic<()> for Status<'P'> {}
+impl<'a> fmt::Display for MultiView<&'a Status<'P'>, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.data;
         write!(f,
@@ -37,7 +37,7 @@ impl<'a> fmt::Display for MultiView<&'a Status<Primary>, ()> {
             d.user_definable_features.display(BoolView::PlusMinus),
             d.fast_back_to_back_capable.display(BoolView::PlusMinus),
             d.master_data_parity_error.display(BoolView::PlusMinus),
-            d.devsel_timing,
+            d.devsel_timing.display(()),
             d.signaled_target_abort.display(BoolView::PlusMinus),
             d.received_target_abort.display(BoolView::PlusMinus),
             d.received_master_abort.display(BoolView::PlusMinus),
@@ -48,8 +48,8 @@ impl<'a> fmt::Display for MultiView<&'a Status<Primary>, ()> {
     }
 }
 
-impl<'a> DisplayMultiViewBasic<()> for Status<SecondaryBridge> {}
-impl<'a> fmt::Display for MultiView<&'a Status<SecondaryBridge>, ()> {
+impl<'a> DisplayMultiViewBasic<()> for Status<'B'> {}
+impl<'a> fmt::Display for MultiView<&'a Status<'B'>, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.data;
         write!(f,
@@ -57,7 +57,7 @@ impl<'a> fmt::Display for MultiView<&'a Status<SecondaryBridge>, ()> {
             d.is_66mhz_capable.display(BoolView::PlusMinus),
             d.fast_back_to_back_capable.display(BoolView::PlusMinus),
             d.master_data_parity_error.display(BoolView::PlusMinus),
-            d.devsel_timing,
+            d.devsel_timing.display(()),
             d.signaled_target_abort.display(BoolView::PlusMinus),
             d.received_target_abort.display(BoolView::PlusMinus),
             d.received_master_abort.display(BoolView::PlusMinus),
@@ -67,14 +67,26 @@ impl<'a> fmt::Display for MultiView<&'a Status<SecondaryBridge>, ()> {
     }
 }
 
-impl<'a> DisplayMultiViewBasic<()> for Status<SecondaryCardbus> {}
-impl<'a> fmt::Display for MultiView<&'a Status<SecondaryCardbus>, ()> {
+impl<'a> DisplayMultiViewBasic<()> for Status<'C'> {}
+impl<'a> fmt::Display for MultiView<&'a Status<'C'>, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.data;
         if d.system_error {
             write!(f, "SERR")
         } else {
             Ok(())
+        }
+    }
+}
+
+impl<'a> DisplayMultiViewBasic<()> for DevselTiming {}
+impl<'a> fmt::Display for MultiView<&'a DevselTiming, ()> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.data {
+            DevselTiming::Fast => write!(f, "fast"),
+            DevselTiming::Medium => write!(f, "medium"),
+            DevselTiming::Slow => write!(f, "slow"),
+            DevselTiming::Undefined => write!(f, "??"),
         }
     }
 }

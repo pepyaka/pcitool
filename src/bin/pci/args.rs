@@ -3,7 +3,7 @@ use clap::{AppSettings, Clap};
 
 use std::path::PathBuf;
 
-use libpci::{
+use pciutils::{
     view::lspci::BasicView,
     access::PreferredMethod,
 };

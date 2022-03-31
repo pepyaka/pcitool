@@ -254,6 +254,8 @@ impl VendorDeviceSubsystem {
     }
 }
 
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct ClassCode(HashMap<CcKey, String>);
 
 impl ClassCode {

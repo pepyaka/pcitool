@@ -1,5 +1,5 @@
 [package]
-name = "libpci"
+name = "pciutils"
 version = "0.1.0"
 authors = ["mbratchikov"]
 edition = "2021"
@@ -21,6 +21,7 @@ displaydoc = "0.2.2"
 byte = "0.2.6"
 kmod = { version = "0.4.0", optional = true }
 pcics = { path = "../pcics" }
+# pcics = "0.1"
 
 [dev-dependencies]
 pretty_assertions = "0.7"

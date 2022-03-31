@@ -1,9 +1,22 @@
 use core::fmt;
 
-use crate::{pciids::VendorDeviceSubsystem, device::capabilities::msi_x::Bir};
-use super::{BasicView, DisplayMultiViewBasic, MultiView};
-use crate::view::{Verbose, BoolView};
-use crate::device::{capabilities::*, Device};
+use pcics::capabilities::msi_x::Bir;
+use pcics::capabilities::sata::BarLocation;
+use pcics::capabilities::{
+    Capability, CapabilityKind, PowerManagementInterface, VitalProductData,
+    MessageSignaledInterrups, BridgeSubsystemVendorId, MsiX, AdvancedFeatures, Sata, DebugPort,
+    SlotIdentification,
+};
+
+use crate::pciids::VendorDeviceSubsystem;
+use crate::view::{
+    BoolView,
+    DisplayMultiViewBasic,
+    MultiView,
+    Verbose,
+};
+use crate::device::Device;
+use super::BasicView;
 
 
 pub struct CapabilityView<'a> {
@@ -12,13 +25,6 @@ pub struct CapabilityView<'a> {
     pub vds: &'a VendorDeviceSubsystem,
 }
 
-// impl<'a> DisplayMultiView<'a> for Capability<'a> {
-//     type Data = &'a Capability<'a>;
-//     type View = (&'a BasicView, LspciDevice<'a>);
-//     fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View> {
-//         MultiView { data: self, view, }
-//     }
-// }
 impl<'a> DisplayMultiViewBasic<&'a CapabilityView<'a>> for Capability<'a> {}
 impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a CapabilityView<'a>> {
    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -26,17 +32,25 @@ impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a CapabilityView<'a>> 
        write!(f, "\tCapabilities: [{:02x}] ", self.data.pointer)?;
        let verbose = Verbose(view.verbose);
        match &self.data.kind {
-           CapabilityKind::PowerManagementInterface(c) =>
-               write!(f, "{}", c.display(verbose)),
-           CapabilityKind::MessageSignaledInterrups(c) =>
-               write!(f, "{}", c.display(verbose)),
+           CapabilityKind::NullCapability => writeln!(f, "Null"),
+           CapabilityKind::PowerManagementInterface(c) => write!(f, "{}", c.display(verbose)),
+           CapabilityKind::VitalProductData(c) => write!(f, "{}", c.display(verbose)),
+           CapabilityKind::MessageSignaledInterrups(c) => write!(f, "{}", c.display(verbose)),
+           CapabilityKind::CompactPciHotSwap(_) => writeln!(f, "CompactPCI hot-swap <?>"),
+           CapabilityKind::Hypertransport(c) => write!(f, "{}", c.display(verbose)),
            CapabilityKind::VendorSpecific(c) => {
                let vc = c.vendor_capability(device.header.vendor_id, device.header.device_id);
                write!(f, "{}", vc.display(()))
            },
-           CapabilityKind::BridgeSubsystemVendorId(c) => {
-               write!(f, "{}\n", c.display((view.as_numbers, vds)))
-           },
+           CapabilityKind::SlotIdentification(c) => write!(f, "{}", c.display(())),
+           CapabilityKind::DebugPort(c) => write!(f, "{}", c.display(())),
+           CapabilityKind::CompactPciResourceControl(_) =>
+               writeln!(f, "CompactPCI central resource control <?>"),
+           CapabilityKind::PciHotPlug(_) => writeln!(f, "Hot-plug capable"),
+           CapabilityKind::BridgeSubsystemVendorId(c) =>
+               writeln!(f, "{}", c.display((view.as_numbers, vds))),
+           CapabilityKind::Agp8x(_) => writeln!(f, "AGP3 <?>"),
+           CapabilityKind::SecureDevice(_) => writeln!(f, "Secure device <?>"),
            CapabilityKind::PciExpress(c) => {
                let view = PciExpressView {
                    verbose: view.verbose,
@@ -44,14 +58,10 @@ impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a CapabilityView<'a>> 
                };
                write!(f, "{}", c.display(view))
            },
-           CapabilityKind::MsiX(c) => {
-               write!(f, "{}", c.display(verbose))
-           },
-           CapabilityKind::AdvancedFeatures(c) => {
-               write!(f, "{}", c.display(verbose))
-           },
-           CapabilityKind::Reserved(cid) =>
-               write!(f, "{:#02x}\n", cid),
+           CapabilityKind::MsiX(c) => write!(f, "{}", c.display(verbose)),
+           CapabilityKind::Sata(c) => write!(f, "{}", c.display(verbose)),
+           CapabilityKind::AdvancedFeatures(c) => write!(f, "{}", c.display(verbose)),
+           CapabilityKind::Reserved(cid) => writeln!(f, "{:#02x}", cid),
        }
    }
 }
@@ -61,14 +71,14 @@ impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a CapabilityView<'a>> 
 impl<'a> DisplayMultiViewBasic<Verbose> for PowerManagementInterface {}
 impl<'a> fmt::Display for MultiView<&'a PowerManagementInterface, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (caps, ctrl, br, d) = 
-            (&self.data.capabilities, &self.data.control, &self.data.bridge, &self.data.data);
+        let (caps, ctrl, br) = 
+            (&self.data.capabilities, &self.data.control, &self.data.bridge);
         let Verbose(verbose) = self.view;
-        write!(f, "Power Management version {}\n", caps.version)?;
+        writeln!(f, "Power Management version {}", caps.version)?;
         if verbose < 2 {
             return Ok(())
         }
-        write!(f, "\t\tFlags: PMEClk{} DSI{} D1{} D2{} AuxCurrent={} PME(D0{},D1{},D2{},D3hot{},D3cold{})\n",
+        writeln!(f, "\t\tFlags: PMEClk{} DSI{} D1{} D2{} AuxCurrent={} PME(D0{},D1{},D2{},D3hot{},D3cold{})",
             caps.pme_clock.display(BoolView::PlusMinus), 
             caps.device_specific_initialization.display(BoolView::PlusMinus), 
             caps.d1_support.display(BoolView::PlusMinus), 
@@ -80,21 +90,49 @@ impl<'a> fmt::Display for MultiView<&'a PowerManagementInterface, Verbose> {
             caps.pme_support.d3_hot.display(BoolView::PlusMinus),
             caps.pme_support.d3_cold.display(BoolView::PlusMinus),
         )?;
-        write!(f, "\t\tStatus: D{} NoSoftRst{} PME-Enable{} DSel={} DScale={} PME{}\n",
+        writeln!(f, "\t\tStatus: D{} NoSoftRst{} PME-Enable{} DSel={} DScale={:?} PME{}",
             ctrl.power_state as usize,
             ctrl.no_soft_reset.display(BoolView::PlusMinus),
             ctrl.pme_enabled.display(BoolView::PlusMinus),
-            d.map(|d| d.select as usize).unwrap_or(0),
-            d.map(|d| d.scale as usize).unwrap_or(0),
+            u8::from(ctrl.data_select),
+            ctrl.data_scale as usize,
             ctrl.pme_status.display(BoolView::PlusMinus),
         )?;
         if br.bpcc_enabled || br.b2_b3 || br.reserved != 0 {
-            write!(f, "\t\tBridge: PM{} B3{}\n",
+            writeln!(f, "\t\tBridge: PM{} B3{}",
                 br.bpcc_enabled.display(BoolView::PlusMinus),
                 br.b2_b3.display(BoolView::PlusMinus),
             )?;
         }
         Ok(())
+    }
+}
+
+// 03h VPD
+impl<'a> DisplayMultiViewBasic<Verbose> for VitalProductData {}
+impl<'a> fmt::Display for MultiView<&'a VitalProductData, Verbose> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Verbose(verbose) = self.view;
+        writeln!(f, "Vital Product Data")?;
+        if verbose < 2 {
+            return Ok(())
+        }
+        // TODO: Iterate through all VPD addresses
+
+        writeln!(f, "\t\tNot readable")?;
+        Ok(())
+    }
+}
+
+// 04h Slot Identification
+impl<'a> DisplayMultiViewBasic<()> for SlotIdentification {}
+impl<'a> fmt::Display for MultiView<&'a SlotIdentification, ()> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Slot ID: {} slots, First{}, chassis {:02x}",
+            self.data.expansion_slot.expansion_slots_provided,
+            self.data.expansion_slot.first_in_chassis.display(BoolView::PlusMinus),
+            self.data.chassis_number,
+        )
     }
 }
 
@@ -110,7 +148,7 @@ impl<'a> fmt::Display for MultiView<&'a MessageSignaledInterrups, Verbose> {
             &self.data.pending_bits
         );
         let Verbose(verbose) = self.view;
-        write!(f, "MSI: Enable{} Count={}/{} Maskable{} 64bit{}\n", 
+        writeln!(f, "MSI: Enable{} Count={}/{} Maskable{} 64bit{}", 
             ctrl.enable.display(BoolView::PlusMinus),
             ctrl.multiple_message_enable as u8,
             ctrl.multiple_message_capable as u8,
@@ -122,19 +160,22 @@ impl<'a> fmt::Display for MultiView<&'a MessageSignaledInterrups, Verbose> {
         }
         match addr {
             MessageAddress::Dword(v) => {
-                write!(f, "\t\tAddress: {:08x}  Data: {:04x}\n", v, data)?;
+                writeln!(f, "\t\tAddress: {:08x}  Data: {:04x}", v, data)?;
             },
             MessageAddress::Qword(v) => {
-                write!(f, "\t\tAddress: {:016x}  Data: {:04x}\n", v, data)?;
+                writeln!(f, "\t\tAddress: {:016x}  Data: {:04x}", v, data)?;
             },
         }
         if let (Some(m), Some(p)) = (mask, pend) {
-            write!(f, "\t\tMasking: {:08x}  Pending: {:08x}\n", m, p)?;
+            writeln!(f, "\t\tMasking: {:08x}  Pending: {:08x}", m, p)?;
         }
         Ok(())
     }
 }
 
+
+// 08h HyperTransport
+mod hypertransport;
 
 // 09h Vendor Specific
 // Used data from internal VendorCapabilty struct
@@ -156,7 +197,7 @@ impl<'a> fmt::Display for MultiView<&'a VendorCapabilty<'a>, ()> {
                     if let Some(multiplier) = multiplier {
                         write!(f, " multiplier={:08x}", multiplier)?;
                     }
-                    write!(f, "\n")
+                    writeln!(f)
                 },
                 Virtio::Isr { bar, offset, size } => write!(f, 
                     "VirtIO: ISR\n\t\tBAR={} offset={:08x} size={:08x}\n", 
@@ -172,11 +213,18 @@ impl<'a> fmt::Display for MultiView<&'a VendorCapabilty<'a>, ()> {
                 ),
             },
             VendorCapabilty::Unspecified(slice) =>
-                write!(f, "Len={:02x} <?>\n", slice.len() + 1),
+                writeln!(f, "Len={:02x} <?>", slice.len() + 1),
         }
     }
 }
 
+// 0Ah Debug port
+impl<'a> DisplayMultiViewBasic<()> for DebugPort {}
+impl<'a> fmt::Display for MultiView<&'a DebugPort, ()> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Debug port: BAR={} offset={:04x}", self.data.bar_number, self.data.offset)
+    }
+}
 
 // 0Dh PCI Bridge Subsystem Vendor ID
 impl<'a> DisplayMultiViewBasic<(usize, &'a VendorDeviceSubsystem)> for BridgeSubsystemVendorId {}
@@ -214,8 +262,8 @@ impl DisplayMultiViewBasic<Verbose> for MsiX {}
 impl fmt::Display for MultiView<&MsiX, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let MsiX { message_control: ctrl, table: tbl, pending_bit_array: pba } = self.data;
-        write!(f,
-            "MSI-X: Enable{} Count={} Masked{}\n",
+        writeln!(f,
+            "MSI-X: Enable{} Count={} Masked{}",
             ctrl.msi_x_enable.display(BoolView::PlusMinus),
             ctrl.table_size + 1,
             ctrl.function_mask.display(BoolView::PlusMinus),
@@ -233,12 +281,40 @@ impl fmt::Display for MultiView<&MsiX, Verbose> {
     }
 }
 
+// 12h Serial ATA Data/Index Configuration
+impl DisplayMultiViewBasic<Verbose> for Sata {}
+impl fmt::Display for MultiView<&Sata, Verbose> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Verbose(verbose) = self.view;
+        let Sata {
+            revision,
+            bar_location,
+            bar_offset,
+        } = self.data;
+        write!(f, "SATA HBA v{}.{}", revision.major, revision.minor)?;
+        if verbose < 2 {
+            writeln!(f)?;
+            return Ok(())
+        }
+        match bar_location {
+            BarLocation::Bar0 => writeln!(f, " BAR0 Offset={:08x}", bar_offset.0),
+            BarLocation::Bar1 => writeln!(f, " BAR1 Offset={:08x}", bar_offset.0),
+            BarLocation::Bar2 => writeln!(f, " BAR2 Offset={:08x}", bar_offset.0),
+            BarLocation::Bar3 => writeln!(f, " BAR3 Offset={:08x}", bar_offset.0),
+            BarLocation::Bar4 => writeln!(f, " BAR4 Offset={:08x}", bar_offset.0),
+            BarLocation::Bar5 => writeln!(f, " BAR5 Offset={:08x}", bar_offset.0),
+            BarLocation::SataCapability1 => writeln!(f, " InCfgSpace"),
+            BarLocation::Reserved(v) => writeln!(f, " BAR??{}", v),
+        }
+    }
+}
+
 // 13h Advanced Features (AF)
 impl DisplayMultiViewBasic<Verbose> for AdvancedFeatures {}
 impl fmt::Display for MultiView<&AdvancedFeatures, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let AdvancedFeatures { capabilities: caps, control: ctrl, status: st, .. } = self.data;
-        write!(f, "PCI Advanced Features\n")?;
+        writeln!(f, "PCI Advanced Features")?;
         if self.view.0 > 1 {
             write!(f,
                 "\t\tAFCap: TP{} FLR{}\n\t\tAFCtrl: FLR{}\n\t\tAFStatus: TP{}\n",
@@ -278,6 +354,8 @@ mod tests {
     use crate::device::ECS_OFFSET;
     use crate::device::DDR_OFFSET;
     use crate::pciids::PciIds;
+    use pcics::Capabilities;
+    use pcics::capabilities::VendorSpecific;
     use pretty_assertions::assert_eq;
 
     use super::*;
