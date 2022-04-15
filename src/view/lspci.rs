@@ -1,16 +1,14 @@
 use core::fmt;
 
 #[cfg(feature = "clap")]
-use clap::Clap;
+use clap::Parser;
 
-use pcics::header::{
-    self,
-    Command,
-    BaseAddressType,
-    HeaderType,
-    InterruptPin,
-    BridgeIoAddressRange,
-    BridgePrefetchableMemory, BaseAddress, ClassCode, IoAccessAddressRange,
+use pcics::{
+    header::{
+        self, Command, BaseAddressType, HeaderType, InterruptPin, BridgeIoAddressRange,
+        BridgePrefetchableMemory, BaseAddress, ClassCode, IoAccessAddressRange,
+    },
+    capabilities::CapabilityKind
 };
 use crate::{
     device::{
@@ -42,7 +40,7 @@ pub struct LspciView {
 
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "clap", derive(Clap))]
+#[cfg_attr(feature = "clap", derive(Parser))]
 pub struct BasicView {
     /// Be verbose (-vv or -vvv for higher verbosity)
     #[cfg_attr(feature = "clap", clap(short = 'v', parse(from_occurrences)))]
@@ -671,24 +669,35 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             ..
         } = self.view;
         let cap_view = CapabilityView { view: &view, device, vds, };
-
-        if device.header.status.capabilities_list {
-            if let Some(caps) = device.capabilities() {
-                for cap in caps {
-                    write!(f, "{}", cap.display(&cap_view))?;
-                }
-            } else {
-                writeln!(f, "\tCapabilities: <access denied>")?;
-            }
+        if !device.header.status.capabilities_list {
+            return Ok(())
         }
+        let mut maybe_pci_express = None;
+        if let Some(caps) = device.capabilities() {
+            for cap in caps {
+                match cap {
+                    Ok(cap) => {
+                        write!(f, "{}", cap.display(&cap_view))?;
+                        if let CapabilityKind::PciExpress(pci_express) = cap.kind {
+                            maybe_pci_express = Some(pci_express);
+                        }
+                    },
+                    Err(err) => writeln!(f, "ERROR {}", err)?,
+                }
+            }
+        } else {
+            writeln!(f, "\tCapabilities: <access denied>")?;
+        };
         if let Some(ecaps) = device.extended_capabilities() {
-            // for ecap in ecaps.filter_map(|ecap| ecap.ok()) {
-            //     write!(f, "{}", ecap.display(EcapsView { view: &view, device }))?;
-            // }
             for ecap in ecaps {
                 match ecap {
                     Ok(ecap) =>
-                        write!(f, "{}", ecap.display(EcapsView { view: &view, device }))?,
+                        write!(f, "{}",
+                            ecap.display(EcapsView {
+                                view: &view,
+                                maybe_pci_express: maybe_pci_express.as_ref(),
+                            })
+                        )?,
                     Err(err) => 
                         writeln!(f, "ERROR {}", err)?,
                 }

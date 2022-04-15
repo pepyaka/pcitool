@@ -43,7 +43,7 @@ pub enum AccessError {
     Io(#[from] io::Error),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(ArgEnum))]
 pub enum PreferredMethod {
     LinuxSysfs,

@@ -1,7 +1,7 @@
 use core::fmt;
 
 use pcics::{
-    capabilities::pci_express,
+    capabilities::PciExpress,
     extended_capabilities::{
         ExtendedCapability,
         ExtendedCapabilityKind,
@@ -18,12 +18,9 @@ use pcics::{
     }
 };
 
-use crate::{
-    device::Device,
-    view::{
-        MultiView,
-        DisplayMultiViewBasic, Verbose, BoolView,
-    }
+use crate::view::{
+    MultiView,
+    DisplayMultiViewBasic, Verbose, BoolView,
 };
 
 use self::aer::AerView;
@@ -33,14 +30,14 @@ use super::BasicView;
 
 pub struct EcapsView<'a> {
     pub view: &'a BasicView,
-    pub device: &'a Device,
+    pub maybe_pci_express: Option<&'a PciExpress>,
 }
 
 
 impl<'a>DisplayMultiViewBasic<EcapsView<'a>> for ExtendedCapability<'a> {}
 impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, EcapsView<'a>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let EcapsView { view, device } = self.view;
+        let EcapsView { view, maybe_pci_express } = self.view;
         let verbose = view.verbose;
         write!(f, "\tCapabilities: [{:03x}", self.data.offset)?;
         if view.verbose > 1 {
@@ -52,11 +49,9 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, EcapsView<'a>> {
             ExtendedCapabilityKind::Null =>
                 writeln!(f, "Null"),
             ExtendedCapabilityKind::AdvancedErrorReporting(c) => {
-                use pci_express::DeviceType::{RootPort, RootComplexEventCollector};
-                let is_type_root = matches!(
-                    device.pci_express_device_type(),
-                    Some(RootPort | RootComplexEventCollector)
-                );
+                let is_type_root = maybe_pci_express
+                    .filter(|pcie| pcie.device_type.is_root())
+                    .is_some();
                 write!(f, "{}", c.display(AerView { verbose, is_type_root }))
             },
             ExtendedCapabilityKind::VirtualChannel(c) =>

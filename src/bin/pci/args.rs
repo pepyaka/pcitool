@@ -1,15 +1,15 @@
 #[cfg(feature = "clap")]
-use clap::{AppSettings, Clap};
+use clap::Parser;
 
 use std::path::PathBuf;
 
-use pciutils::{
+use pcitool::{
     view::lspci::BasicView,
     access::PreferredMethod,
 };
 
-#[derive(Debug, Clap)]
-#[clap(author, about, version, setting = AppSettings::ColoredHelp)]
+#[derive(Parser, Debug)]
+#[clap(author, about, version)]
 pub struct Args {
     #[clap(short = 'G')]
     pub debug: bool,
@@ -17,7 +17,7 @@ pub struct Args {
     pub command: Command,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Parser, Debug)]
 pub enum Command {
     /// List all PCI devices
     #[clap(name = "list", alias = "ls")]
@@ -27,7 +27,7 @@ pub enum Command {
     Set(Set),
 }
 
-#[derive(Debug, Clap)]
+#[derive(Parser, Debug)]
 pub struct List {
     /// Produce machine-readable output (single -m for an obsolete format)
     #[clap(short = 'm', parse(from_occurrences))]
@@ -52,5 +52,5 @@ pub struct List {
 
 
 
-#[derive(Debug, Clap)]
+#[derive(Parser, Debug)]
 pub struct Set;

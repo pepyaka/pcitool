@@ -16,7 +16,6 @@ use byte::{
 pub mod address;
 pub use address::Address;
 
-use pcics::capabilities::{pci_express, CapabilityKind};
 use pcics::header::BaseAddressType;
 pub use pcics::header::{self, Header, HeaderType};
 // pub mod header;
@@ -103,17 +102,6 @@ impl Device {
         } else {
             false
         }
-    }
-    pub fn pci_express_device_type(&self) -> Option<pci_express::DeviceType> {
-        self.capabilities().and_then(|mut caps| {
-            caps.find_map(|cap| {
-                if let CapabilityKind::PciExpress(pcie) = cap.kind {
-                    Some(pcie.capabilities.device_type)
-                } else {
-                    None
-                }
-            })
-        })
     }
 }
 impl PartialOrd for Device {

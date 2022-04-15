@@ -28,10 +28,18 @@ pub struct CapabilityView<'a> {
 impl<'a> DisplayMultiViewBasic<&'a CapabilityView<'a>> for Capability<'a> {}
 impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a CapabilityView<'a>> {
    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-       let CapabilityView { view, device, vds } = self.view;
+       let CapabilityView {
+           view: BasicView {
+               verbose,
+               as_numbers,
+               ..
+           },
+           device, vds,
+       } = &self.view;
+       let Capability { pointer, kind } = &self.data;
+       let verbose = Verbose(*verbose);
        write!(f, "\tCapabilities: [{:02x}] ", self.data.pointer)?;
-       let verbose = Verbose(view.verbose);
-       match &self.data.kind {
+       match kind {
            CapabilityKind::NullCapability => writeln!(f, "Null"),
            CapabilityKind::PowerManagementInterface(c) => write!(f, "{}", c.display(verbose)),
            CapabilityKind::VitalProductData(c) => write!(f, "{}", c.display(verbose)),
@@ -48,13 +56,14 @@ impl<'a> fmt::Display for MultiView<&'a Capability<'a>, &'a CapabilityView<'a>> 
                writeln!(f, "CompactPCI central resource control <?>"),
            CapabilityKind::PciHotPlug(_) => writeln!(f, "Hot-plug capable"),
            CapabilityKind::BridgeSubsystemVendorId(c) =>
-               writeln!(f, "{}", c.display((view.as_numbers, vds))),
+               writeln!(f, "{}", c.display((*as_numbers, vds))),
            CapabilityKind::Agp8x(_) => writeln!(f, "AGP3 <?>"),
            CapabilityKind::SecureDevice(_) => writeln!(f, "Secure device <?>"),
            CapabilityKind::PciExpress(c) => {
                let view = PciExpressView {
-                   verbose: view.verbose,
-                   device,
+                   pointer: *pointer,
+                   verbose: verbose.0,
+                   device
                };
                write!(f, "{}", c.display(view))
            },
@@ -101,7 +110,7 @@ impl<'a> fmt::Display for MultiView<&'a PowerManagementInterface, Verbose> {
         if br.bpcc_enabled || br.b2_b3 || br.reserved != 0 {
             writeln!(f, "\t\tBridge: PM{} B3{}",
                 br.bpcc_enabled.display(BoolView::PlusMinus),
-                br.b2_b3.display(BoolView::PlusMinus),
+                (!br.b2_b3).display(BoolView::PlusMinus),
             )?;
         }
         Ok(())
@@ -381,7 +390,7 @@ mod tests {
             Power Management version 2\n\
             \t\tFlags: PMEClk- DSI- D1+ D2+ AuxCurrent=0mA PME(D0+,D1+,D2+,D3hot+,D3cold-)\n\
             \t\tStatus: D0 NoSoftRst- PME-Enable- DSel=0 DScale=0 PME-\n\
-            \t\tBridge: PM- B3+\n\
+            \t\tBridge: PM- B3-\n\
         ";
         assert_eq!(v2_sample, v2_result, "-vv");
 
@@ -390,7 +399,7 @@ mod tests {
             Power Management version 2\n\
             \t\tFlags: PMEClk- DSI- D1+ D2+ AuxCurrent=0mA PME(D0+,D1+,D2+,D3hot+,D3cold-)\n\
             \t\tStatus: D0 NoSoftRst- PME-Enable- DSel=0 DScale=0 PME-\n\
-            \t\tBridge: PM- B3+\n\
+            \t\tBridge: PM- B3-\n\
         ";
         assert_eq!(v3_sample, v3_result, "-vvv");
     }
@@ -446,7 +455,12 @@ mod tests {
             view: &BasicView { verbose: 3, ..Default::default() },
             device, vds,
         };
-        let s = caps.map(|c| c.display(&view).to_string())
+        let s = caps.map(|cap| {
+                match cap {
+                    Ok(val) => val.display(&view).to_string(),
+                    Err(e) => e.to_string(),
+                }
+            })
             .collect::<String>();
         let result = s.lines()
             .collect::<Vec<_>>();

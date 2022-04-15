@@ -1,7 +1,6 @@
-#[cfg(feature = "clap")]
-use clap::Clap;
+use clap::Parser;
 
-use pciutils::{
+use pcitool::{
     access::{
         AccessMethod,
         PreferredMethod,
