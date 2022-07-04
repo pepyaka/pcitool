@@ -6,10 +6,6 @@ use std::str::Lines;
 use regex::Regex;
 use lazy_static::lazy_static;
 use thiserror::Error;
-use byte::{
-    ctx::*,
-    BytesExt,
-};
 
 use crate::device::ConfigurationSpaceSize;
 use crate::device::{Address, address::ParseAddressError, Device};
@@ -146,7 +142,8 @@ impl<'a> Iterator for Iter<'a> {
             if let Ok(DumpAddress(new_addr)) = line.parse() {
                 if let Some(addr) = self.addr.replace(new_addr) {
                     let cs = bytes[..(size as usize)]
-                        .read_with(&mut 0, LE).ok()?;
+                        // .read_with(&mut 0, LE).ok()?;
+                        .try_into().ok()?;
                     let device = Device::new(addr, cs);
                     return Some(device);
                 }
@@ -158,7 +155,8 @@ impl<'a> Iterator for Iter<'a> {
         }
         if let Some(addr) = self.addr.take() {
             let cs = bytes[..(size as usize)]
-                .read_with(&mut 0, LE).ok()?;
+                // .read_with(&mut 0, LE).ok()?;
+                        .try_into().ok()?;
             let device = Device::new(addr, cs);
             Some(device)
         } else {
@@ -228,7 +226,7 @@ mod tests {
             include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),
                 "/tests/data/device/8086:9dc8/config"
             ))
-            [..64].read_with(&mut 0, LE).unwrap();
+            [..64].try_into().unwrap();
         let sample = vec![
             Device::new(sample_addr, sample_cs),
         ];
@@ -249,7 +247,7 @@ mod tests {
             include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),
                 "/tests/data/device/8086:9dc8/config"
             ))
-            .read_with(&mut 0, LE).unwrap();
+            .as_slice().try_into().unwrap();
         let sample = vec![
             Device::new(sample_addr, sample_cs),
         ];
@@ -270,7 +268,7 @@ mod tests {
             include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),
                 "/tests/data/device/8086:2030/config"
             ))
-            .read_with(&mut 0, LE).unwrap();
+            .as_slice().try_into().unwrap();
         let sample = vec![
             Device::new(sample_addr, sample_cs),
         ];

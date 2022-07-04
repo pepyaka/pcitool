@@ -49,6 +49,7 @@ impl Kmod {
         let ctx = kmod::Context::new()
             .map_err(KmodError::Modules)?;
 
+        dbg!(&modalias);
         let modules = ctx.module_new_from_lookup(&modalias)
             .map_err(KmodError::Modules)?
             .map(|m| m.name().to_string())
@@ -65,6 +66,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
+    #[ignore]
     fn kmod_get() {
         let test_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/data/device/8086:9dc8");

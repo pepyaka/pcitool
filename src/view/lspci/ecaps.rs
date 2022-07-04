@@ -14,84 +14,179 @@ use pcics::{
         AddressTranslationServices, PageRequestInterface, AccessControlServices,
         PrecisionTimeMeasurement, DownstreamPortContainment, PowerBudgeting,
         AlternativeRoutingIdInterpretation, TphRequester,
-        tph_requester::StTableLocation,
+        tph_requester::StTable, ExtendedCapabilityError,
     }
 };
 
-use crate::view::{
+use crate::{view::{
     MultiView,
-    DisplayMultiViewBasic, Verbose, BoolView,
-};
+    DisplayMultiView, Verbose, BoolView,
+}, device::Device};
 
 use self::aer::AerView;
+use self::vc::VcView;
 
 use super::BasicView;
 
 
 pub struct EcapsView<'a> {
     pub view: &'a BasicView,
+    pub device: &'a Device,
     pub maybe_pci_express: Option<&'a PciExpress>,
 }
 
-
-impl<'a>DisplayMultiViewBasic<EcapsView<'a>> for ExtendedCapability<'a> {}
-impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, EcapsView<'a>> {
+impl<'a> DisplayMultiView<&'a EcapsView<'a>> for ExtendedCapabilityError {}
+impl<'a> fmt::Display for MultiView<&'a ExtendedCapabilityError, &'a EcapsView<'a>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let EcapsView { view, maybe_pci_express } = self.view;
+        let EcapsView {
+            view: &BasicView { verbose, .. },
+            ..
+        } = self.view;
+        let (offset, msg) = match self.data {
+            offset @ ExtendedCapabilityError::Offset => (&0, format!("{}", offset)),
+            header @ ExtendedCapabilityError::Header { offset } => (offset, format!("{}", header)),
+            header @ ExtendedCapabilityError::EmptyHeader { offset } => {
+                (offset, format!("{}", header))
+            }
+            ExtendedCapabilityError::Data { offset, source } => (offset, format!("{}", source)),
+            ExtendedCapabilityError::AdvancedErrorReporting { offset, source } => {
+                (offset, format!("{}", source))
+            }
+            ExtendedCapabilityError::RootComplexLinkDeclaration { offset, source } => {
+                (offset, format!("{}", source.display(Verbose(verbose))))
+            }
+            ExtendedCapabilityError::SingleRootIoVirtualization { offset, source } => {
+                (offset, format!("{}", source))
+            }
+            ExtendedCapabilityError::DownstreamPortContainment { offset, source } => {
+                (offset, format!("{}", source))
+            }
+        };
+        let ver = if verbose > 1 { " v0" } else { "" };
+        write!(f, "\tCapabilities: [{:03x}{}] {}", offset, ver, msg)
+    }
+}
+
+
+
+
+
+impl<'a>DisplayMultiView<&'a EcapsView<'a>> for ExtendedCapability<'a> {}
+impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let EcapsView {
+            view,
+            device,
+            maybe_pci_express,
+        } = self.view;
         let verbose = view.verbose;
-        write!(f, "\tCapabilities: [{:03x}", self.data.offset)?;
+        let offset = self.data.offset;
+        write!(f, "\tCapabilities: [{:03x}", offset)?;
         if view.verbose > 1 {
             write!(f, " v{}", self.data.version)?;
         }
         write!(f, "] ")?;
 
         match &self.data.kind {
-            ExtendedCapabilityKind::Null =>
-                writeln!(f, "Null"),
+            // 0000h
+            ExtendedCapabilityKind::Null => writeln!(f, "Null"),
+            // 0001h
             ExtendedCapabilityKind::AdvancedErrorReporting(c) => {
                 let is_type_root = maybe_pci_express
                     .filter(|pcie| pcie.device_type.is_root())
                     .is_some();
-                write!(f, "{}", c.display(AerView { verbose, is_type_root }))
-            },
-            ExtendedCapabilityKind::VirtualChannel(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::PrecisionTimeMeasurement(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::DeviceSerialNumber(c) =>
-                write!(f, "{}", c.display(())),
-            ExtendedCapabilityKind::PowerBudgeting(c) =>
-                write!(f, "{}", c.display(())),
-            ExtendedCapabilityKind::RootComplexLinkDeclaration(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::VendorSpecificExtendedCapability(c) =>
-                write!(f, "{}", c.display(())),
-            ExtendedCapabilityKind::AccessControlServices(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::AlternativeRoutingIdInterpretation(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::AddressTranslationServices(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::SingleRootIoVirtualization(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::PageRequestInterface(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::TphRequester(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::LatencyToleranceReporting(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::SecondaryPciExpress(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::ProcessAddressSpaceId(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::DownstreamPortContainment(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
-            ExtendedCapabilityKind::L1PmSubstates(c) =>
-                write!(f, "{}", c.display(Verbose(verbose))),
+                write!(
+                    f,
+                    "{}",
+                    c.display(AerView {
+                        verbose,
+                        is_type_root
+                    })
+                )
+            }
+            // 0002h
+            ExtendedCapabilityKind::VirtualChannel(c) => {
+                write!(f, "{}", c.display(VcView { verbose, offset }))
+            }
+            // 0003h
+            ExtendedCapabilityKind::DeviceSerialNumber(c) => write!(f, "{}", c.display(())),
+            // 0004h
+            ExtendedCapabilityKind::PowerBudgeting(c) => write!(f, "{}", c.display(())),
+            // 0005h
+            ExtendedCapabilityKind::RootComplexLinkDeclaration(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 0009h
+            ExtendedCapabilityKind::VirtualChannelMfvcPresent(c) => {
+                write!(f, "{}", c.display(VcView { verbose, offset }))
+            }
+            // 000Bh
+            ExtendedCapabilityKind::VendorSpecificExtendedCapability(c) => {
+                write!(f, "{}", c.display(()))
+            }
+            // 000Dh
+            ExtendedCapabilityKind::AccessControlServices(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 000Eh
+            ExtendedCapabilityKind::AlternativeRoutingIdInterpretation(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 000Fh
+            ExtendedCapabilityKind::AddressTranslationServices(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 0010h
+            ExtendedCapabilityKind::SingleRootIoVirtualization(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 0013h
+            ExtendedCapabilityKind::PageRequestInterface(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 0017h
+            ExtendedCapabilityKind::TphRequester(c) => write!(f, "{}", c.display(Verbose(verbose))),
+            // 0018h
+            ExtendedCapabilityKind::LatencyToleranceReporting(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 0019h
+            ExtendedCapabilityKind::SecondaryPciExpress(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 001Bh
+            ExtendedCapabilityKind::ProcessAddressSpaceId(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 001Dh
+            ExtendedCapabilityKind::DownstreamPortContainment(c) => {
+                // extended_configuration_space at 0x100
+                let offset = offset as usize + 0x08 - 0x100;
+                let maybe_raw_dpc_trigger_reason_extension = device
+                    .extended_configuration_space
+                    .as_ref()
+                    .and_then(|ecs| ecs.0.get(offset).map(|byte| *byte >> 5 & 0b11));
+                let view = DpcView {
+                    verbose,
+                    maybe_raw_dpc_trigger_reason_extension,
+                };
+                write!(f, "{}", c.display(view))
+            }
+            // 001Eh
+            ExtendedCapabilityKind::L1PmSubstates(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 001Fh
+            ExtendedCapabilityKind::PrecisionTimeMeasurement(c) => {
+                write!(f, "{}", c.display(Verbose(verbose)))
+            }
             _ => writeln!(f, "TODO {:?}", &self.data.kind),
         }
     }
 }
+
+
+
 
 // 0001h Advanced Error Reporting (AER)
 mod aer;
@@ -100,25 +195,26 @@ mod aer;
 mod vc;
 
 // 0003h Device Serial Number
-impl<'a> DisplayMultiViewBasic<()> for DeviceSerialNumber {}
+impl<'a> DisplayMultiView<()> for DeviceSerialNumber {}
 impl<'a> fmt::Display for MultiView<&'a DeviceSerialNumber, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let DeviceSerialNumber { lower_dword, upper_dword } = self.data;
-        if lower_dword == &0 && upper_dword == &0 {
-            Ok(())
-        } else {
-            let [b0, b1, b2, b3] = lower_dword.to_le_bytes();
-            let [b4, b5, b6, b7] = upper_dword.to_le_bytes();
-            writeln!(f,
-                "Device Serial Number {:02x}-{:02x}-{:02x}-{:02x}-{:02x}-{:02x}-{:02x}-{:02x}",
-                b7, b6, b5, b4, b3, b2, b1, b0
-            )
-        }
+        let DeviceSerialNumber {
+            lower_dword,
+            upper_dword,
+        } = self.data;
+        let [b0, b1, b2, b3] = lower_dword.to_le_bytes();
+        let [b4, b5, b6, b7] = upper_dword.to_le_bytes();
+        writeln!(
+            f,
+            "Device Serial Number {:02x}-{:02x}-{:02x}-{:02x}-{:02x}-{:02x}-{:02x}-{:02x}",
+            b7, b6, b5, b4, b3, b2, b1, b0
+        )
     }
 }
 
+
 // 0004h Power Budgeting
-impl<'a> DisplayMultiViewBasic<()> for PowerBudgeting {}
+impl<'a> DisplayMultiView<()> for PowerBudgeting {}
 impl<'a> fmt::Display for MultiView<&'a PowerBudgeting, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             writeln!(f, "Power Budgeting <?>")
@@ -135,23 +231,23 @@ mod rclink;
 // 000Ah Root Complex Register Block (RCRB) Header
 
 // 000Bh Vendor-Specific Extended Capability (VSEC)
-impl<'a> DisplayMultiViewBasic<()> for VendorSpecificExtendedCapability<'a> {}
+impl<'a> DisplayMultiView<()> for VendorSpecificExtendedCapability<'a> {}
 impl<'a> fmt::Display for MultiView<&'a VendorSpecificExtendedCapability<'a>, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let h = &self.data.header;
-        write!(f, "Vendor Specific Information: ")?;
-        if h.vsec_length <= 8 {
-            writeln!(f, "<unreadable>")
-        } else {
-            writeln!(f, "ID={:04x} Rev={} Len={:03x} <?>", h.vsec_id, h.vsec_rev, h.vsec_length)
-        }
+        writeln!(
+            f,
+            "Vendor Specific Information: ID={:04x} Rev={} Len={:03x} <?>",
+            h.vsec_id, h.vsec_rev, h.vsec_length
+        )
     }
 }
+
 
 // 000Ch Configuration Access Correlation (CAC) – defined by the Trusted Configuration Space (TCS) for PCI Express ECN, which is no longer supported
 
 // 000Dh Access Control Services (ACS) 
-impl<'a> DisplayMultiViewBasic<Verbose> for AccessControlServices<'a> {}
+impl<'a> DisplayMultiView<Verbose> for AccessControlServices<'a> {}
 impl<'a> fmt::Display for MultiView<&'a AccessControlServices<'a,>, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -188,7 +284,7 @@ impl<'a> fmt::Display for MultiView<&'a AccessControlServices<'a,>, Verbose> {
 }
 
 // 000Eh Alternative Routing-ID Interpretation (ARI)
-impl<'a> DisplayMultiViewBasic<Verbose> for AlternativeRoutingIdInterpretation {}
+impl<'a> DisplayMultiView<Verbose> for AlternativeRoutingIdInterpretation {}
 impl<'a> fmt::Display for MultiView<&'a AlternativeRoutingIdInterpretation, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -216,7 +312,7 @@ impl<'a> fmt::Display for MultiView<&'a AlternativeRoutingIdInterpretation, Verb
 }
 
 // 000Fh Address Translation Services (ATS) 
-impl<'a> DisplayMultiViewBasic<Verbose> for AddressTranslationServices {}
+impl<'a> DisplayMultiView<Verbose> for AddressTranslationServices {}
 impl<'a> fmt::Display for MultiView<&'a AddressTranslationServices, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -247,7 +343,7 @@ mod sr_iov;
 // 0012h Multicast
 
 // 0013h Page Request Interface (PRI)
-impl<'a> DisplayMultiViewBasic<Verbose> for PageRequestInterface {}
+impl<'a> DisplayMultiView<Verbose> for PageRequestInterface {}
 impl<'a> fmt::Display for MultiView<&'a PageRequestInterface, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -285,7 +381,7 @@ impl<'a> fmt::Display for MultiView<&'a PageRequestInterface, Verbose> {
 // 0016h Dynamic Power Allocation (DPA)
 
 // 0017h TPH Requester
-impl<'a> DisplayMultiViewBasic<Verbose> for TphRequester<'a> {}
+impl<'a> DisplayMultiView<Verbose> for TphRequester<'a> {}
 impl<'a> fmt::Display for MultiView<&'a TphRequester<'a>, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -306,21 +402,23 @@ impl<'a> fmt::Display for MultiView<&'a TphRequester<'a>, Verbose> {
         if caps.extended_tph_requester_supported {
             writeln!(f, "\t\tExtended requester support")?;
         }
-        match caps.st_table_location {
-            StTableLocation::NotPresent =>
+        match caps.st_table {
+            StTable::NotPresent =>
                 writeln!(f, "\t\tNo steering table available"),
-            StTableLocation::TphRequesterCapability =>
+            StTable::Valid { .. } =>
                 writeln!(f, "\t\tSteering table in TPH capability structure"),
-            StTableLocation::MsiXTable =>
+            StTable::Invalid { .. } =>
+                writeln!(f, "\t\tSteering table in TPH capability structure"),
+            StTable::MsiXTable { .. } =>
                 writeln!(f, "\t\tSteering table in MSI-X table"),
-            StTableLocation::Reserved =>
+            StTable::Reserved =>
                 writeln!(f, "\t\tReserved steering table location"),
         }
     }
 }
 
 // 0018h Latency Tolerance Reporting (LTR)
-impl<'a> DisplayMultiViewBasic<Verbose> for LatencyToleranceReporting {}
+impl<'a> DisplayMultiView<Verbose> for LatencyToleranceReporting {}
 impl<'a> fmt::Display for MultiView<&'a LatencyToleranceReporting, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -332,14 +430,22 @@ impl<'a> fmt::Display for MultiView<&'a LatencyToleranceReporting, Verbose> {
             max_snoop_latency: snoop,
             max_no_snoop_latency: nosnoop
         } = self.data;
+        
+        // lspci has simple value to scale multiplication, although scale can't be > 5
+        fn calc(value: u16, scale: u8) -> u64 {
+            // PCI_LTR_VALUE_MASK
+            let value = (value as u64) & 0x3ff;
+            let scale = 1u32.wrapping_shl(5 * (scale as u32));
+            value * (scale as u64)
+        }
 
-        writeln!(f, "\t\tMax snoop latency: {}ns", snoop.value())?;
-        writeln!(f, "\t\tMax no snoop latency: {}ns", nosnoop.value())
+        writeln!(f, "\t\tMax snoop latency: {}ns", calc(snoop.value, snoop.scale))?;
+        writeln!(f, "\t\tMax no snoop latency: {}ns", calc(nosnoop.value, nosnoop.scale))
     }
 }
 
 // 0019h Secondary PCI Express
-impl<'a> DisplayMultiViewBasic<Verbose> for SecondaryPciExpress<'a> {}
+impl<'a> DisplayMultiView<Verbose> for SecondaryPciExpress<'a> {}
 impl<'a> fmt::Display for MultiView<&'a SecondaryPciExpress<'a>, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -357,7 +463,7 @@ impl<'a> fmt::Display for MultiView<&'a SecondaryPciExpress<'a>, Verbose> {
             ctrl.link_equalization_request_interrupt_enable.display(BoolView::PlusMinus),
             ctrl.perform_equalization.display(BoolView::PlusMinus),
         )?;
-        let mut lane_err_sta = lane_error_status.0;
+        let mut lane_err_sta = lane_error_status.0 as u16;
         write!(f, "\t\tLaneErrStat: ")?;
         if lane_err_sta > 0 {
             write!(f, "LaneErr at lane:")?;
@@ -380,7 +486,7 @@ impl<'a> fmt::Display for MultiView<&'a SecondaryPciExpress<'a>, Verbose> {
 // 001Ah Protocol Multiplexing (PMUX)
 
 // 001Bh Process Address Space ID (PASID) 
-impl<'a> DisplayMultiViewBasic<Verbose> for ProcessAddressSpaceId {}
+impl<'a> DisplayMultiView<Verbose> for ProcessAddressSpaceId {}
 impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -410,11 +516,12 @@ impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
 
 // 001Ch LN Requester (LNR)
 
+struct DpcView { verbose: usize, maybe_raw_dpc_trigger_reason_extension: Option<u8> }
 // 001Dh Downstream Port Containment (DPC)
-impl<'a> DisplayMultiViewBasic<Verbose> for DownstreamPortContainment {}
-impl<'a> fmt::Display for MultiView<&'a DownstreamPortContainment, Verbose> {
+impl<'a> DisplayMultiView<DpcView> for DownstreamPortContainment {}
+impl<'a> fmt::Display for MultiView<&'a DownstreamPortContainment, DpcView> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let verbose = self.view.0;
+        let DpcView { verbose, maybe_raw_dpc_trigger_reason_extension } = self.view;
         writeln!(f, "Downstream Port Containment")?;
         if verbose < 2 {
             return Ok(());
@@ -426,11 +533,6 @@ impl<'a> fmt::Display for MultiView<&'a DownstreamPortContainment, Verbose> {
             dpc_error_source_id,
             ..
         } = self.data;
-        if (0, 0, 0, &0) ==
-            (dpc_capability.into(), dpc_control.into(), dpc_status.into(), dpc_error_source_id)
-        {
-            return Ok(());
-        }
         writeln!(f,
             "\t\tDpcCap:\tINT Msg #{}, RPExt{} PoisonedTLP{} SwTrigger{} RP PIO Log {}, DL_ActiveErr{}",
             dpc_capability.dpc_interrupt_message_number,
@@ -456,7 +558,7 @@ impl<'a> fmt::Display for MultiView<&'a DownstreamPortContainment, Verbose> {
             dpc_status.dpc_trigger_reason.value(),
             dpc_status.dpc_interrupt_status.display(BoolView::PlusMinus),
             dpc_status.dpc_rp_busy.display(BoolView::PlusMinus),
-            dpc_status.dpc_trigger_reason.extension_value(),
+            maybe_raw_dpc_trigger_reason_extension.unwrap_or(0),
             dpc_status.rp_pio_first_error_pointer,
         )?;
         writeln!(f, "\t\tSource:\t{:04x}", dpc_error_source_id)
@@ -464,7 +566,7 @@ impl<'a> fmt::Display for MultiView<&'a DownstreamPortContainment, Verbose> {
 }
 
 // 001Eh L1 PM Substates
-impl<'a> DisplayMultiViewBasic<Verbose> for L1PmSubstates {}
+impl<'a> DisplayMultiView<Verbose> for L1PmSubstates {}
 impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -477,16 +579,16 @@ impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
             l1_pm_substates_control_1: ctl1,
             l1_pm_substates_control_2: ctl2,
         } = self.data;
-        if (0u32, 0u32, 0u32) == (caps.clone().into(), ctl1.clone().into(), ctl2.clone().into()) {
-            return writeln!(f, "\t\t<unreadable>");
-        }
         writeln!(f,
             "\t\tL1SubCap: PCI-PM_L1.2{} PCI-PM_L1.1{} ASPM_L1.2{} ASPM_L1.1{} L1_PM_Substates{}",
             caps.pci_pm_l1_2_supported.display(BoolView::PlusMinus),
             caps.pci_pm_l1_1_supported.display(BoolView::PlusMinus),
             caps.aspm_l1_2_supported.display(BoolView::PlusMinus),
             caps.aspm_l1_1_supported.display(BoolView::PlusMinus),
-            caps.l1_pm_substates_supported.display(BoolView::PlusMinus),
+            // caps.l1_pm_substates_supported.display(BoolView::PlusMinus),
+            // There is the bug in lspci: PCI_L1PM_SUBSTAT_CAP_L1PM_SUPP should be 0x10 not 0x16
+            (caps.pci_pm_l1_1_supported || caps.aspm_l1_2_supported || caps.l1_pm_substates_supported)
+                .display(BoolView::PlusMinus),
         )?;
         let is_l1_2_supported = caps.pci_pm_l1_2_supported || caps.aspm_l1_2_supported;
         if is_l1_2_supported {
@@ -531,7 +633,7 @@ impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
 }
 
 // 001Fh Precision Time Measurement (PTM) 
-impl<'a> DisplayMultiViewBasic<Verbose> for PrecisionTimeMeasurement {}
+impl<'a> DisplayMultiView<Verbose> for PrecisionTimeMeasurement {}
 impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -543,9 +645,6 @@ impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
             ptm_capability: caps,
             ptm_control: ctrl,
         } = self.data;
-        if u32::from(caps.clone()) == 0 && u32::from(ctrl.clone()) == 0 {
-            return writeln!(f, "\t\t<unreadable>");
-        }
         writeln!(f,
             "\t\tPTMCap: Requester:{} Responder:{} Root:{}",
             caps.ptm_requester_capable.display(BoolView::PlusMinus),

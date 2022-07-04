@@ -3,15 +3,10 @@
 //!
 
 use core::cmp::Ordering;
+use std::array::TryFromSliceError;
 
 use displaydoc::Display;
-use byte::{
-    ctx::*,
-    self,
-    TryRead,
-    // TryWrite,
-    BytesExt,
-};
+use heterob::Seq;
 
 pub mod address;
 pub use address::Address;
@@ -75,9 +70,8 @@ impl Device {
     }
     pub fn capabilities(&self) -> Option<Capabilities> {
         let ddr = self.device_dependent_region.as_ref();
-        let ptr = self.header.capabilities_pointer;
-        ddr.filter(|_| ptr > 0)
-            .map(|ddr| Capabilities::new(&ddr.0, ptr))
+        ddr.filter(|_| self.header.capabilities_pointer > 0)
+            .map(|ddr| Capabilities::new(&ddr.0, &self.header))
     }
     pub fn extended_capabilities(&self) -> Option<ExtendedCapabilities> {
         self.extended_configuration_space.as_ref()
@@ -162,15 +156,25 @@ impl ConfigurationSpace {
         }
     }
 }
-impl<'a> TryRead<'a, Endian> for ConfigurationSpace {
-    fn try_read(bytes: &'a [u8], endian: Endian) -> byte::Result<(Self, usize)> {
-        let offset = &mut 0;
-        let header = bytes.read_with::<Header>(offset, endian)?; 
-        let device_dependent_region = bytes.get(64..256)
-            .and_then(|bytes| bytes.try_into().ok());
-        let extended_configuration_space = bytes.get(256..4096)
-            .and_then(|bytes| bytes.try_into().ok());
-        Ok((Self { header, device_dependent_region, extended_configuration_space }, *offset))
+impl TryFrom<&[u8]> for ConfigurationSpace {
+    type Error = TryFromSliceError;
+
+    fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
+        let Seq { head, tail } = slice.try_into()?;
+        let (ddr, ecs) = if let Ok(Seq { head: ddr, tail }) = TryFrom::<&[u8]>::try_from(tail) {
+            if let Ok(Seq { head: ecs, .. }) = TryFrom::<&[u8]>::try_from(tail) {
+                (Some(ddr), Some(ecs))
+            } else {
+                (Some(ddr), None)
+            }
+        } else {
+            (None, None)
+        };
+        Ok(Self {
+            header: From::<[u8; Header::TOTAL_SIZE]>::from(head),
+            device_dependent_region: ddr.map(DeviceDependentRegion),
+            extended_configuration_space: ecs.map(ExtendedConfigurationSpace),
+        })
     }
 }
 
@@ -217,16 +221,16 @@ impl ResourceEntry {
         }
     }
     pub fn flags(&self) -> u64 { self.flags & 0xf }
+    pub fn base_addr(&self) -> u64 { self.start | self.flags() }
 }
 
 #[cfg(test)]
 mod tests {
-    use byte::*;
     use super::*;
 
     #[test]
     fn device_order() {
-        let cs: ConfigurationSpace = [0; 64].read_with(&mut 0, LE).unwrap();
+        let cs: ConfigurationSpace = [0; 64].as_slice().try_into().unwrap();
         let a = Device::new(Default::default(), cs.clone());
         let b = Device::new("00:00.1".parse().unwrap(), cs);
         assert!(a < b);
@@ -234,7 +238,7 @@ mod tests {
 
     #[test]
     fn empty_capabilities() {
-        let cs = [0; 64].read_with(&mut 0, LE).unwrap();
+        let cs: ConfigurationSpace = [0; 64].as_slice().try_into().unwrap();
         let device = Device::new(Default::default(), cs);
         assert_eq!(None, device.capabilities());
     }

@@ -7,7 +7,7 @@ use pcitool::{
         dump::Dump
     },
     pciids::{PciIds, VendorDeviceSubsystem, ClassCode},
-    view::{DisplayMultiViewBasic, lspci::LspciView},
+    view::{DisplayMultiView, lspci::LspciView},
 };
 
 mod args;
@@ -35,7 +35,7 @@ fn main() {
                         basic_view.always_domain_number = true;
                     }
                     let view = LspciView { basic_view, vendor_device_subsystem, class_code };
-                    for device in devices {
+                    for device in &devices {
                         print!("{}", device.display(&view));
                     }
                 },

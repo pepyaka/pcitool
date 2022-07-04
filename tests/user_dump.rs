@@ -1,17 +1,17 @@
+use pretty_assertions::assert_eq;
 use std::process::Command;
 use std::process::Stdio;
-use pretty_assertions::assert_eq;
-
 
 const PCI_BIN_PATH: &str = env!("CARGO_BIN_EXE_pci");
 const LSPCI_BIN_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/bin/lspci");
+// const LSPCI_BIN_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../pciutils/lspci");
 
 // mod common;
 
 macro_rules! user_dump_multiple_args {
     ($($fname:ident: $x:expr, $args:expr,)*) => {
         $(
-            // #[ignore] 
+            // #[ignore]
             #[test]
             fn $fname() {
                 ls(&format!(
@@ -26,49 +26,49 @@ macro_rules! user_dump_multiple_args {
 }
 
 user_dump_multiple_args! {
-    user_dump_x:       "x", "",
-    user_dump_x_n:     "x", "-n",
-    user_dump_x_nn:    "x", "-nn",
-    user_dump_x_v:     "x", "-v",
-    user_dump_x_vv:    "x", "-vv",
-    user_dump_x_vvv:   "x", "-vvv",
-    user_dump_x_nv:    "x", "-nv",
-    user_dump_x_nvv:   "x", "-nvv",
-    user_dump_x_nvvv:  "x", "-nvvv",
-    user_dump_x_nnv:   "x", "-nnv",
-    user_dump_x_nnvv:  "x", "-nnvv",
-    user_dump_x_nnvvv: "x", "-nnvvv",
-    user_dump_xxx:       "xxx", "",
-    user_dump_xxx_n:     "xxx", "-n",
-    user_dump_xxx_nn:    "xxx", "-nn",
-    user_dump_xxx_v:     "xxx", "-v",
-    user_dump_xxx_vv:    "xxx", "-vv",
-    user_dump_xxx_vvv:   "xxx", "-vvv",
-    user_dump_xxx_nv:    "xxx", "-nv",
-    user_dump_xxx_nvv:   "xxx", "-nvv",
-    user_dump_xxx_nvvv:  "xxx", "-nvvv",
-    user_dump_xxx_nnv:   "xxx", "-nnv",
-    user_dump_xxx_nnvv:  "xxx", "-nnvv",
-    user_dump_xxx_nnvvv: "xxx", "-nnvvv",
-    user_dump_xxxx:       "xxxx", "",
-    user_dump_xxxx_n:     "xxxx", "-n",
-    user_dump_xxxx_nn:    "xxxx", "-nn",
-    user_dump_xxxx_v:     "xxxx", "-v",
+    args_x:       "x", "",
+    args_x_n:     "x", "-n",
+    args_x_nn:    "x", "-nn",
+    args_x_v:     "x", "-v",
+    args_x_vv:    "x", "-vv",
+    args_x_vvv:   "x", "-vvv",
+    args_x_nv:    "x", "-nv",
+    args_x_nvv:   "x", "-nvv",
+    args_x_nvvv:  "x", "-nvvv",
+    args_x_nnv:   "x", "-nnv",
+    args_x_nnvv:  "x", "-nnvv",
+    args_x_nnvvv: "x", "-nnvvv",
+    args_xxx:       "xxx", "",
+    args_xxx_n:     "xxx", "-n",
+    args_xxx_nn:    "xxx", "-nn",
+    args_xxx_v:     "xxx", "-v",
+    args_xxx_vv:    "xxx", "-vv",
+    args_xxx_vvv:   "xxx", "-vvv",
+    args_xxx_nv:    "xxx", "-nv",
+    args_xxx_nvv:   "xxx", "-nvv",
+    args_xxx_nvvv:  "xxx", "-nvvv",
+    args_xxx_nnv:   "xxx", "-nnv",
+    args_xxx_nnvv:  "xxx", "-nnvv",
+    args_xxx_nnvvv: "xxx", "-nnvvv",
+    args_xxxx:       "xxxx", "",
+    args_xxxx_n:     "xxxx", "-n",
+    args_xxxx_nn:    "xxxx", "-nn",
+    args_xxxx_v:     "xxxx", "-v",
     // This test cover most of issues
-    user_dump_xxxx_vv:    "xxxx", "-vv",
-    user_dump_xxxx_vvv:   "xxxx", "-vvv",
-    user_dump_xxxx_nv:    "xxxx", "-nv",
-    user_dump_xxxx_nvv:   "xxxx", "-nvv",
-    user_dump_xxxx_nvvv:  "xxxx", "-nvvv",
-    user_dump_xxxx_nnv:   "xxxx", "-nnv",
-    user_dump_xxxx_nnvv:  "xxxx", "-nnvv",
-    user_dump_xxxx_nnvvv: "xxxx", "-nnvvv",
+    args_xxxx_vv:    "xxxx", "-vv",
+    args_xxxx_vvv:   "xxxx", "-vvv",
+    args_xxxx_nv:    "xxxx", "-nv",
+    args_xxxx_nvv:   "xxxx", "-nvv",
+    args_xxxx_nvvv:  "xxxx", "-nvvv",
+    args_xxxx_nnv:   "xxxx", "-nnv",
+    args_xxxx_nnvv:  "xxxx", "-nnvv",
+    args_xxxx_nnvvv: "xxxx", "-nnvvv",
 }
 
-macro_rules! user_dump_nnvvv_multiple_machines {
+macro_rules! machines {
     ($($fname:ident: $machine:expr,)*) => {
         $(
-            // #[ignore] 
+            // #[ignore]
             #[test]
             fn $fname() {
                 ls(&format!(
@@ -81,104 +81,12 @@ macro_rules! user_dump_nnvvv_multiple_machines {
     }
 }
 
-user_dump_nnvvv_multiple_machines! {
-    user_dump_xxxx_ec8a5fc_nnvvv: "ec8a5fc",
-    user_dump_xxxx_02daadc_nnvvv: "02daadc",
-    user_dump_xxxx_23c7a39_nnvvv: "23c7a39",
+machines! {
+    machine_ec8a5fc: "ec8a5fc",
+    machine_02daadc: "02daadc",
+    machine_23c7a39: "23c7a39",
 }
 
-macro_rules! user_dump_fuzzing_nnvvv {
-    ($($fname:ident: $fuzz:expr,)*) => {
-        $(
-            // #[ignore] 
-            #[test]
-            fn $fname() {
-                ls(&format!(
-                    "-F {}/tests/data/fuzzing/{} -nnvvv",
-                    env!("CARGO_MANIFEST_DIR"),
-                    $fuzz,
-                ), false);
-            }
-        )*
-    }
-}
-
-user_dump_fuzzing_nnvvv! {
-    user_dump_fuzzing_header_type0_nnvvv: "header/Type00",
-    user_dump_fuzzing_header_type0_multifunction_nnvvv: "header/Type00.multi",
-    user_dump_fuzzing_header_type1_nnvvv: "header/Type01",
-    user_dump_fuzzing_header_type1_multifunction_nnvvv: "header/Type01.multi",
-    user_dump_fuzzing_header_type2_nnvvv: "header/Type02",
-
-    user_dump_fuzzing_capability_00_nnvvv: "capability/00",
-    user_dump_fuzzing_capability_01_nnvvv: "capability/01",
-    user_dump_fuzzing_capability_02_nnvvv: "capability/02",
-    user_dump_fuzzing_capability_03_nnvvv: "capability/03",
-    user_dump_fuzzing_capability_04_nnvvv: "capability/04",
-    user_dump_fuzzing_capability_05_nnvvv: "capability/05",
-    user_dump_fuzzing_capability_06_nnvvv: "capability/06",
-    user_dump_fuzzing_capability_07_nnvvv: "capability/07",
-    user_dump_fuzzing_capability_08_nnvvv: "capability/08",
-    user_dump_fuzzing_capability_09_nnvvv: "capability/09",
-    user_dump_fuzzing_capability_0a_nnvvv: "capability/0a",
-    user_dump_fuzzing_capability_0b_nnvvv: "capability/0b",
-    user_dump_fuzzing_capability_0c_nnvvv: "capability/0c",
-    user_dump_fuzzing_capability_0d_nnvvv: "capability/0d",
-    user_dump_fuzzing_capability_0e_nnvvv: "capability/0e",
-    user_dump_fuzzing_capability_0f_nnvvv: "capability/0f",
-    user_dump_fuzzing_capability_10_nnvvv: "capability/10",
-    user_dump_fuzzing_capability_11_nnvvv: "capability/11",
-    user_dump_fuzzing_capability_12_nnvvv: "capability/12",
-    user_dump_fuzzing_capability_13_nnvvv: "capability/13",
-    user_dump_fuzzing_capability_14_nnvvv: "capability/14",
-    user_dump_fuzzing_capability_15_nnvvv: "capability/15",
-    
-    user_dump_fuzzing_extended_capability_00_nnvvv: "extended_capability/00",
-    user_dump_fuzzing_extended_capability_01_nnvvv: "extended_capability/01",
-    user_dump_fuzzing_extended_capability_02_nnvvv: "extended_capability/02",
-    user_dump_fuzzing_extended_capability_03_nnvvv: "extended_capability/03",
-    user_dump_fuzzing_extended_capability_04_nnvvv: "extended_capability/04",
-    user_dump_fuzzing_extended_capability_05_nnvvv: "extended_capability/05",
-    user_dump_fuzzing_extended_capability_06_nnvvv: "extended_capability/06",
-    user_dump_fuzzing_extended_capability_07_nnvvv: "extended_capability/07",
-    user_dump_fuzzing_extended_capability_08_nnvvv: "extended_capability/08",
-    user_dump_fuzzing_extended_capability_09_nnvvv: "extended_capability/09",
-    user_dump_fuzzing_extended_capability_0a_nnvvv: "extended_capability/0a",
-    user_dump_fuzzing_extended_capability_0b_nnvvv: "extended_capability/0b",
-    user_dump_fuzzing_extended_capability_0c_nnvvv: "extended_capability/0c",
-    user_dump_fuzzing_extended_capability_0d_nnvvv: "extended_capability/0d",
-    user_dump_fuzzing_extended_capability_0e_nnvvv: "extended_capability/0e",
-    user_dump_fuzzing_extended_capability_0f_nnvvv: "extended_capability/0f",
-    user_dump_fuzzing_extended_capability_10_nnvvv: "extended_capability/10",
-    user_dump_fuzzing_extended_capability_11_nnvvv: "extended_capability/11",
-    user_dump_fuzzing_extended_capability_12_nnvvv: "extended_capability/12",
-    user_dump_fuzzing_extended_capability_13_nnvvv: "extended_capability/13",
-    user_dump_fuzzing_extended_capability_14_nnvvv: "extended_capability/14",
-    user_dump_fuzzing_extended_capability_15_nnvvv: "extended_capability/15",
-    user_dump_fuzzing_extended_capability_16_nnvvv: "extended_capability/16",
-    user_dump_fuzzing_extended_capability_17_nnvvv: "extended_capability/17",
-    user_dump_fuzzing_extended_capability_18_nnvvv: "extended_capability/18",
-    user_dump_fuzzing_extended_capability_19_nnvvv: "extended_capability/19",
-    user_dump_fuzzing_extended_capability_1a_nnvvv: "extended_capability/1a",
-    user_dump_fuzzing_extended_capability_1b_nnvvv: "extended_capability/1b",
-    user_dump_fuzzing_extended_capability_1c_nnvvv: "extended_capability/1c",
-    user_dump_fuzzing_extended_capability_1d_nnvvv: "extended_capability/1d",
-    user_dump_fuzzing_extended_capability_1e_nnvvv: "extended_capability/1e",
-    user_dump_fuzzing_extended_capability_1f_nnvvv: "extended_capability/1f",
-    user_dump_fuzzing_extended_capability_20_nnvvv: "extended_capability/20",
-    user_dump_fuzzing_extended_capability_21_nnvvv: "extended_capability/21",
-    user_dump_fuzzing_extended_capability_22_nnvvv: "extended_capability/22",
-    user_dump_fuzzing_extended_capability_23_nnvvv: "extended_capability/23",
-    user_dump_fuzzing_extended_capability_24_nnvvv: "extended_capability/24",
-    user_dump_fuzzing_extended_capability_25_nnvvv: "extended_capability/25",
-    user_dump_fuzzing_extended_capability_26_nnvvv: "extended_capability/26",
-    user_dump_fuzzing_extended_capability_27_nnvvv: "extended_capability/27",
-    user_dump_fuzzing_extended_capability_28_nnvvv: "extended_capability/28",
-    user_dump_fuzzing_extended_capability_29_nnvvv: "extended_capability/29",
-    user_dump_fuzzing_extended_capability_2a_nnvvv: "extended_capability/2a",
-    user_dump_fuzzing_extended_capability_2b_nnvvv: "extended_capability/2b",
-    user_dump_fuzzing_extended_capability_2c_nnvvv: "extended_capability/2c",
-}
 
 fn ls(args_str: &str, test_stderr: bool) {
     let args: Vec<&str> = args_str.split_whitespace().collect();
@@ -201,10 +109,12 @@ fn ls(args_str: &str, test_stderr: bool) {
         ));
     let pci_ls_out = String::from_utf8_lossy(&pci_ls.stdout);
     let pci_ls_err = String::from_utf8_lossy(&pci_ls.stderr);
-    
+
     let lspci_err_lines = lspci_err.lines().collect::<Vec<_>>();
     let pci_ls_err_lines = pci_ls_err.lines().collect::<Vec<_>>();
-    
+
+    dbg!(&lspci_err_lines, &pci_ls_err_lines);
+
     if test_stderr {
         assert_eq!(lspci_err_lines, pci_ls_err_lines, "STDERR");
     }
@@ -213,4 +123,202 @@ fn ls(args_str: &str, test_stderr: bool) {
     let pci_ls_out_lines = pci_ls_out.lines().collect::<Vec<_>>();
 
     assert_eq!(lspci_out_lines, pci_ls_out_lines, "STDOUT");
+}
+
+#[cfg(test)]
+mod fuzzing {
+    use super::*;
+    use seq_macro::seq;
+    use std::{io::Write, iter};
+    use tempfile::NamedTempFile;
+
+    const RANDOM_DATA: &'static [u8; 4096 * 64] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/fuzzing/random"
+    ));
+
+    const TEST_COUNT: usize = 64;
+
+    const CAP_EA_FIXES: [(usize, u8, u8); 12 * 3] = [
+        (0x44, 0b111, 0x02),
+        (0x48, 0b10, 0x00),
+        (0x4c, 0b10, 0x00),
+        (0x50, 0b111, 0x03),
+        (0x54, 0b10, 0x00),
+        (0x58, 0b10, 0x10),
+        (0x60, 0b111, 0x03),
+        (0x64, 0b10, 0x10),
+        (0x68, 0b10, 0x00),
+        (0x70, 0b111, 0x04),
+        (0x74, 0b10, 0x10),
+        (0x78, 0b10, 0x10),
+        (0x84, 0b111, 0x02),
+        (0x88, 0b10, 0x00),
+        (0x8c, 0b10, 0x00),
+        (0x90, 0b111, 0x03),
+        (0x94, 0b10, 0x00),
+        (0x98, 0b10, 0x10),
+        (0xa0, 0b111, 0x03),
+        (0xa4, 0b10, 0x10),
+        (0xa8, 0b10, 0x00),
+        (0xb0, 0b111, 0x04),
+        (0xb4, 0b10, 0x10),
+        (0xb8, 0b10, 0x10),
+        (0xc4, 0b111, 0x02),
+        (0xc8, 0b10, 0x00),
+        (0xcc, 0b10, 0x00),
+        (0xd0, 0b111, 0x03),
+        (0xd4, 0b10, 0x10),
+        (0xd8, 0b10, 0x00),
+        (0xe0, 0b111, 0x03),
+        (0xe4, 0b10, 0x00),
+        (0xe8, 0b10, 0x10),
+        (0xf0, 0b111, 0x03),
+        (0xf4, 0b10, 0x10),
+        (0xf8, 0b10, 0x00),
+    ];
+
+    #[derive(Clone, Copy)]
+    enum Param {
+        Header { htype: u8 },
+        Caps { id: u8, htype: u8 },
+        Ecaps { id: u16, htype: u8 },
+    }
+
+    #[test]
+    fn header_type_00() {
+        run_test(Param::Header { htype: 0x00 });
+    }
+
+    #[test]
+    fn header_type_00_multifunction() {
+        run_test(Param::Header { htype: 0x00 | 0x80 });
+    }
+
+    #[test]
+    fn header_type_01() {
+        run_test(Param::Header { htype: 0x01 });
+    }
+
+    #[test]
+    fn header_type_01_multifunction() {
+        run_test(Param::Header { htype: 0x01 | 0x80 });
+    }
+
+    #[test]
+    fn header_type_02() {
+        run_test(Param::Header { htype: 0x02 });
+    }
+
+    #[test]
+    fn header_type_02_multifunction() {
+        run_test(Param::Header { htype: 0x02 | 0x80 });
+    }
+
+    // use paste::paste;
+    seq!(N in 0x00..=0x15 {
+        #[test]
+        fn capability_~N() {
+            run_test(Param::Caps { id: N, htype: 0 });
+        }
+    });
+
+    seq!(N in 0x00..=0x34 {
+        #[test]
+        fn extended_capability_~N() {
+            run_test(Param::Ecaps { id: N, htype: 0 });
+        }
+    });
+    
+    #[test]
+    fn capability_10_bridge() {
+        run_test(Param::Caps { id: 10, htype: 1 });
+    }
+
+    #[test]
+    fn capability_14_bridge() {
+        run_test(Param::Caps { id: 14, htype: 1 });
+    }
+
+    fn run_test(param: Param) {
+        let dump: String =
+            RANDOM_DATA.chunks_exact(4096).take(TEST_COUNT)
+            .chain(iter::once([u8::MIN; 4096].as_slice()))
+            .chain(iter::once([u8::MAX; 4096].as_slice()))
+            .enumerate()
+            .map(|(dn, cs)| {
+                let conf_space = &mut [0u8; 4096];
+                conf_space.copy_from_slice(cs);
+                let len = add_fixtures(conf_space, param);
+
+                let (bus, dev, fun) = ((dn & 0xff00) >> 8, (dn & 0b11111000) >> 3, dn & 0b111);
+                let body = conf_space[..len].chunks_exact(16).enumerate().map(|(ln, hbytes)| {
+                    let hbytes: String = hbytes.iter().map(|b| format!(" {:02x}", b)).collect();
+                    format!("{:x}0:{}\n", ln, hbytes)
+                });
+                Some(format!("{:02x}:{:02x}.{:x} _\n", bus, dev, fun))
+                    .into_iter()
+                    .chain(body)
+                    .collect::<String>()
+            })
+            .collect();
+
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "{}", dump).unwrap();
+        let args = format!("-nnvvv -F {}", file.path().to_string_lossy());
+        dbg!(&args);
+
+        // Uncoment to save temp file
+        file.keep().unwrap();
+
+        ls(&args, true);
+    }
+
+    
+    fn add_fixtures(slice: &mut [u8], param: Param) -> usize {
+        let mut fill_common_caps = |id, htype| {
+                slice[..64].fill(0);
+                slice[0x06] = 0x10; // Has capabilities
+                slice[0x0e] = htype; // Header type
+                slice[0x34] = 0x40; // Cap ptr
+                slice[0x40] = id; // Cap ID
+                slice[0x41] = 0; // Next cap ID
+            
+        };
+        match param {
+            Param::Header { htype } => {
+                slice[0x0e] = htype;
+                slice[0x34] = slice[0x34].max(0x40); // Cap pointer should be >= 0x40
+                slice[0x3d] &= 0xf; // Limit interrupt pin to 16
+                64
+            }
+            Param::Caps { id: 0x14, htype } => {
+                fill_common_caps(0x14, htype);
+                slice[0x42] &= 0xf; // Entries number
+                for (mut offset, mask, val) in CAP_EA_FIXES {
+                    if htype == 1 {
+                        offset += 4;
+                    }
+                    slice[offset] = slice[offset] & !mask | val;
+                }
+                256
+            }
+            Param::Caps { id, htype } => {
+                fill_common_caps(id, htype);
+                256
+            }
+            Param::Ecaps { id, htype } => {
+                let _ = htype;
+                slice[..256].fill(0);
+                slice[0x06] = 0x10; // Has capabilities
+                slice[0x34] = 0x40; // Cap ptr
+                slice[0x40] = 0x10; // PCI Express
+                let [lo, hi] = id.to_le_bytes();
+                (slice[0x100], slice[0x101]) = (lo, hi); // Ecap ID
+                (slice[0x102], slice[0x103]) = (0, 0); // Next ecap ID
+                4096
+            }
+        }
+    }
+
 }

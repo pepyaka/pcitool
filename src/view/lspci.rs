@@ -5,10 +5,10 @@ use clap::Parser;
 
 use pcics::{
     header::{
-        self, Command, BaseAddressType, HeaderType, InterruptPin, BridgeIoAddressRange,
-        BridgePrefetchableMemory, BaseAddress, ClassCode, IoAccessAddressRange,
+        self, Command, HeaderType, InterruptPin, BridgeIoAddressRange,
+        BridgePrefetchableMemory, ClassCode, IoAccessAddressRange, Normal, Bridge, Cardbus,
     },
-    capabilities::CapabilityKind
+    capabilities::CapabilityKind, Header
 };
 use crate::{
     device::{
@@ -17,8 +17,9 @@ use crate::{
     },
     pciids,
 };
-use crate::view::{BoolView, DisplayMultiViewBasic, MultiView};
-use self::{caps::CapabilityView, ecaps::EcapsView};
+use crate::view::{BoolView, DisplayMultiView, MultiView};
+use self::{caps::CapsView, ecaps::EcapsView};
+
 
 mod hdr;
 mod caps;
@@ -29,6 +30,17 @@ pub mod kmod;
 
 
 const PCI_IORESOURCE_PCI_EA_BEI: u64 = 1 << 5;
+
+
+pub struct Flag(pub bool);
+
+impl fmt::Display for Flag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", super::View::<bool, '±'>(self.0))
+    }
+}
+
+pub struct View<T>(T);
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +74,7 @@ pub struct BasicView {
     pub as_numbers: usize,
 }
 
-impl<'a> DisplayMultiViewBasic<&'a LspciView> for Device {}
+impl<'a> DisplayMultiView<&'a LspciView> for Device {}
 impl<'a> fmt::Display for MultiView<&'a Device, &'a LspciView> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.view.basic_view.verbose > 0 {
@@ -300,14 +312,14 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
                 writeln!(f, "\tIOMMU group: {}", iommu_group)?;
             }
         } else {
-            write!(f, "\tFlags: {}{}{}{}{}{}{}",
+            write!(f, "\tFlags: {}{}{}{}{}{}{} devsel",
                 command.bus_master.display(BoolView::Str("bus master, ")),
                 command.vga_palette_snoop.display(BoolView::Str("VGA palette snoop, ")),
                 command.stepping.display(BoolView::Str("stepping, ")),
                 command.fast_back_to_back_enable.display(BoolView::Str("fast Back2Back, ")),
                 status.is_66mhz_capable.display(BoolView::Str("66MHz, ")),
                 status.user_definable_features.display(BoolView::Str("user-definable features, ")),
-                format!("{} devsel", status.devsel_timing),
+                status.devsel_timing.display(()),
             )?;
             if command.bus_master {
                 write!(f, ", latency {}", latency_timer)?;
@@ -368,10 +380,13 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             primary_bus_number, secondary_bus_number, subordinate_bus_number, secondary_latency_timer
         )?;
 
+        // write!(f, "{:?} ", io_address_range)?;
         // TODO: I/O Base and I/O Limit registers values from /sys/bus/pci/devices/*/resource
         match io_address_range {
-            BridgeIoAddressRange::NotImplemented =>
-                write!(f, "\tI/O behind bridge: [disabled]")?,
+            BridgeIoAddressRange::NotImplemented => {
+                write!(f, "\tI/O behind bridge:")?;
+                fmt_range(f, 0, 0xfff, false, verbose)?
+            }
             BridgeIoAddressRange::IoAddr16 { base, limit } => {
                 write!(f, "\tI/O behind bridge:")?;
                 fmt_range(f, *base as u64, *limit as u64 + 0xfff, false, verbose)?
@@ -400,8 +415,10 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         // TODO: Prefetchable Memory Base and Prefetchable Memory Limit values from
         // /sys/bus/pci/devices/*/resource
         match prefetchable_memory {
-            BridgePrefetchableMemory::NotImplemented =>
-                write!(f, "\tPrefetchable memory behind bridge: [disabled]")?,
+            BridgePrefetchableMemory::NotImplemented => {
+                write!(f, "\tPrefetchable memory behind bridge:")?;
+                fmt_range(f, 0, 0xfffff, false, verbose)?
+            }
             BridgePrefetchableMemory::MemAddr32 { base, limit } => {
                 write!(f, "\tPrefetchable memory behind bridge:")?;
                 fmt_range(f, *base as u64, *limit as u64 + 0xfffff, false, verbose)?
@@ -549,118 +566,230 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         self.fmt_capabilities(f)
     }
     fn fmt_bases(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let LspciView { basic_view: view, .. } = self.view;
+        let &LspciView {
+            basic_view: BasicView { verbose, .. },
+            ..
+        } = self.view;
         let device = self.data;
-        let Command { io_space, memory_space, .. } = device.header.command;
-        let pf = |prefetchable: bool| {
-            if prefetchable { "" } else { "non-" }
-        };
-        let mut fmt_ba = |ba: BaseAddress| -> fmt::Result {
-            write!(f, "\t")?;
-            if view.verbose > 1 {
-                write!(f, "Region {}: ", ba.region)?;
+        let Command {
+            io_space,
+            memory_space,
+            ..
+        } = device.header.command;
+        let mut bars = match device.header.header_type {
+            HeaderType::Normal(Normal {
+                ref base_addresses,
+                ..
+            }) => base_addresses.0.iter(),
+            HeaderType::Bridge(Bridge {
+                ref base_addresses, ..
+            }) => base_addresses.0.iter(),
+            HeaderType::Cardbus(Cardbus {
+                ref base_addresses, ..
+            }) => base_addresses.0.iter(),
+            _ => todo!(),
+        }.enumerate();
+
+        const PCI_ADDR_MEM_MASK: u64 = !0xf;
+        // const PCI_BASE_ADDRESS_SPACE: u32 = 0x01; /* 0 = memory, 1 = I/O */
+        const PCI_BASE_ADDRESS_SPACE_IO: u32 = 0x01;
+        // const PCI_BASE_ADDRESS_SPACE_MEMORY: u32 = 0x00;
+        const PCI_BASE_ADDRESS_MEM_TYPE_MASK: u32 = 0x06;
+        const PCI_BASE_ADDRESS_MEM_TYPE_32: u32 = 0x00; /* 32 bit address */
+        const PCI_BASE_ADDRESS_MEM_TYPE_1M: u32 = 0x02; /* Below 1M [obsolete] */
+        const PCI_BASE_ADDRESS_MEM_TYPE_64: u32 = 0x04; /* 64 bit address */
+        const PCI_BASE_ADDRESS_MEM_PREFETCH: u32 = 0x08; /* prefetchable? */
+        const PCI_BASE_ADDRESS_MEM_MASK: u64 = !0x0f;
+        const PCI_BASE_ADDRESS_IO_MASK: u64 = !0x03;
+
+        let mut virt = false;
+        while let Some((n, bar)) = bars.next() {
+            let (pos, len, ioflg) =
+                if let Some(re) = device.resource.as_ref().and_then(|r| r.entries.get(n)) {
+                    (re.base_addr(), re.size(), re.flags)
+                } else {
+                    (0, 0, 0)
+                };
+
+            let mut flg = *bar;
+            let mut hw_upper = 0;
+            let mut broken = false;
+
+            if flg == u32::MAX {
+                flg = 0;
             }
 
-            let resource = device.resource.as_ref()
-                .and_then(|r| r.entries.get(ba.region));
-            let size = resource.map(|r| r.size());
-            let (is_zero_ba, is_disabled, size) =
-                match ba.base_address_type {
-                    BaseAddressType::IoSpace { base_address } => {
-                        if base_address != 0 || io_space {
-                            write!(f, "I/O ports at {:x}", base_address)?;
-                        } else if size > Some(0) {
-                            write!(f, "I/O ports at <ignored>")?;
-                        } else {
-                            write!(f, "I/O ports at <unassigned>")?;
-                        }
-                        (base_address == 0, !io_space, size.map(u64::from))
-                    },
-                    BaseAddressType::MemorySpace64Broken { prefetchable } => {
-                        write!(f, "Memory at <broken-64-bit-slot> (64-bit, {}prefetchable)", pf(prefetchable))?;
-                        (false, !memory_space, None)
-                    },
-                    BaseAddressType::MemorySpace32 { base_address, prefetchable } => {
-                        if base_address != 0 {
-                            write!(f, "Memory at {:08x}", base_address)?;
-                        } else if size > Some(0) {
-                            write!(f, "Memory at <ignored>")?;
-                        } else {
-                            write!(f, "Memory at <unassigned>")?;
-                        }
-                        write!(f, " (32-bit, {}prefetchable)", pf(prefetchable))?;
-                        (base_address == 0, !memory_space, size.map(u64::from))
-                    },
-                    BaseAddressType::MemorySpaceBelow1M { base_address, prefetchable } => {
-                        if base_address != 0 {
-                            write!(f, "Memory at {:08x}", base_address)?;
-                        } else if size > Some(0) {
-                            write!(f, "Memory at <ignored>")?;
-                        } else {
-                            write!(f, "Memory at <unassigned>")?;
-                        }
-                        write!(f, " (low-1M, {}prefetchable)", pf(prefetchable))?;
-                        (base_address == 0, !memory_space, size.map(u64::from))
-                    },
-                    BaseAddressType::MemorySpace64 { base_address, prefetchable } => {
-                        if base_address != 0 {
-                            write!(f, "Memory at {:08x}", base_address)?;
-                        } else if size > Some(0) {
-                            write!(f, "Memory at <ignored>")?;
-                        } else {
-                            write!(f, "Memory at <unassigned>")?;
-                        }
-                        write!(f, " (64-bit, {}prefetchable)", pf(prefetchable))?;
-                        (base_address == 0, !memory_space, size)
-                    },
-                    BaseAddressType::MemorySpaceReserved { base_address, prefetchable } => {
-                        write!(f, "Memory at {:08x} (type 3, {}prefetchable)", base_address, pf(prefetchable))?;
-                        (false, !memory_space, None)
-                    },
-                };
-            let is_non_zero_bei = resource.map(|e| e.flags)
-                .filter(|ioflag| ioflag & PCI_IORESOURCE_PCI_EA_BEI > 0)
-                .is_some();
+            // TODO: Complicated base_addr[i] values. Just set from conf space
+            let mut pos: u64 = if pos == 0 { flg as u64 } else { pos };
+
+            if pos == 0 && flg == 0 && len == 0 {
+                continue;
+            }
+
+            if verbose > 1 {
+                write!(f, "\tRegion {}: ", n)?;
+            } else {
+                write!(f, "\t")?;
+            }
+
+            // Read address as seen by the hardware
+            let hw_lower = if (flg & PCI_BASE_ADDRESS_SPACE_IO) != 0 {
+                flg & PCI_BASE_ADDRESS_IO_MASK as u32
+            } else {
+                if (flg & PCI_BASE_ADDRESS_MEM_TYPE_MASK) == PCI_BASE_ADDRESS_MEM_TYPE_64 {
+                    if let Some((_, val)) = bars.next() {
+                        hw_upper = *val;
+                        // TODO: Complicated base_addr[i] values. Just set from conf space
+                        pos |= (hw_upper as u64) << 32;
+                    } else {
+                        eprintln!("pcilib: {}: Invalid 64-bit address seen for BAR {}.", device.address, n);
+                        broken = true;
+                    }
+                }
+                flg & PCI_BASE_ADDRESS_MEM_MASK as u32
+            };
+
             // Detect virtual regions, which are reported by the OS, but unassigned in the device
-            // (    pos     ) && (!hw_lower && !hw_upper) && !(ioflg & PCI_IORESOURCE_PCI_EA_BEI)
-            if is_zero_ba && !is_non_zero_bei {
-                write!(f, " [virtual]")?;
-            } else if is_disabled {
-                write!(f, " [disabled]")?;
+            if pos != 0 && hw_lower == 0 && hw_upper == 0 && (ioflg & PCI_IORESOURCE_PCI_EA_BEI) == 0 {
+                flg = pos as u32;
+                virt = true;
             }
-            if is_non_zero_bei {
-                write!(f, " [enchanced]")?;
+
+            // Print base address
+            if (flg & PCI_BASE_ADDRESS_SPACE_IO) != 0 {
+                let a = pos & PCI_BASE_ADDRESS_IO_MASK;
+                write!(f, "I/O ports at ")?;
+                if a != 0 || io_space {
+                    write!(f, "{:04x}", a)?;
+                } else if hw_lower != 0 {
+                    write!(f, "<ignored>")?;
+                } else {
+                    write!(f, "<unassigned>")?;
+                }
+                if virt {
+                    write!(f, " [virtual]")?;
+                } else if !io_space {
+                    write!(f, " [disabled]")?;
+                }
+            } else {
+                let t = flg & PCI_BASE_ADDRESS_MEM_TYPE_MASK;
+                let a = pos & PCI_ADDR_MEM_MASK;
+
+                write!(f, "Memory at ")?;
+                if broken {
+                    write!(f, "<broken-64-bit-slot>")?;
+                } else if a != 0 {
+                    write!(f, "{:08x}", a)?;
+                } else if hw_lower != 0 || hw_upper != 0 {
+                    write!(f, "<ignored>")?;
+                } else {
+                    write!(f, "<unassigned>")?;
+                }
+                let type_ = match t {
+                    PCI_BASE_ADDRESS_MEM_TYPE_32 => "32-bit",
+                    PCI_BASE_ADDRESS_MEM_TYPE_64 => "64-bit",
+                    PCI_BASE_ADDRESS_MEM_TYPE_1M => "low-1M",
+                    _ => "type 3",
+                };
+                let pf = if flg & PCI_BASE_ADDRESS_MEM_PREFETCH != 0 {
+                    ""
+                } else {
+                    "non-"
+                };
+                write!(f, " ({}, {}prefetchable)", type_, pf)?;
+                if virt {
+                    write!(f, " [virtual]")?;
+                } else if !memory_space {
+                    write!(f, " [disabled]")?;
+                }
             }
-            if let Some(s) = size { 
-                fmt_size(f, s)?; 
+
+            if ioflg & PCI_IORESOURCE_PCI_EA_BEI != 0 {
+                write!(f, " [enhanced]")?;
             }
-            writeln!(f)
-        };
-        if let Some(base_addresses) = device.header.header_type.base_addresses() {
-            for ba in base_addresses {
-                fmt_ba(ba)?;
-            }
+
+            fmt_size(f, len)?;
+            writeln!(f)?;
         }
         Ok(())
     }
+
+
+
     // fn fmt_machine(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     //     write!(f, "TODO: fmt_machine")
     // }
+
     fn fmt_rom(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: Virtual ROM, flags and other
-        if let Some(rom) = self.data.header.header_type.expansion_rom() {
-            if rom.address != 0 {
-                write!(f, "\tExpansion ROM at {:08x}", rom.address)?;
-                if !rom.is_enabled {
-                    write!(f, " [disabled]")?;
-                } else if !self.data.header.command.memory_space {
-                    write!(f, " [disabled by cmd]")?;
-                }
-                writeln!(f)?;
-            }
+        const PCI_ROM_ADDRESS_ENABLE: u32 = 0x01;
+        const PCI_ROM_ADDRESS_MASK: u32 = !0x7ff;
+        const PCI_IORESOURCE_PCI_EA_BEI: u64 = 1 << 5;
+
+        let Device {
+            header:
+                Header {
+                    header_type,
+                    command: Command { memory_space, .. },
+                    ..
+                },
+            resource,
+            ..
+        } = self.data;
+        let (_rom, len, ioflg) = if let Some(re) = resource.as_ref().map(|r| r.rom_entry.clone()) {
+            (re.base_addr(), re.size(), re.flags)
+        } else {
+            (0, 0, 0)
+        };
+        let mut flg: u32 = 0;
+        if let Some(expansion_rom) = header_type.expansion_rom() {
+            flg = expansion_rom.into();
         }
+        let mut virt = false;
+
+        // TODO: Virtual ROM, flags and other
+        let rom: u64 = if flg == u32::MAX { 0 } else { flg as u64 };
+
+        if rom == 0 && flg == 0 && len == 0 {
+            return Ok(());
+        }
+
+        if (rom & PCI_ROM_ADDRESS_MASK as u64) != 0
+            && (flg & PCI_ROM_ADDRESS_MASK) == 0
+            && (ioflg & PCI_IORESOURCE_PCI_EA_BEI) == 0
+        {
+            flg = rom as u32;
+            virt = true;
+        }
+
+        write!(f, "\tExpansion ROM at ")?;
+        if (rom & PCI_ROM_ADDRESS_MASK as u64) != 0 {
+            write!(f, "{:08x}", rom & PCI_ROM_ADDRESS_MASK as u64)?;
+        } else if (flg & PCI_ROM_ADDRESS_MASK) != 0 {
+            write!(f, "<ignored>")?;
+        } else {
+            write!(f, "<unassigned>")?;
+        }
+
+        if virt {
+            write!(f, " [virtual]")?;
+        }
+
+        if (flg & PCI_ROM_ADDRESS_ENABLE) == 0 {
+            write!(f, " [disabled]")?;
+        } else if !virt && !memory_space {
+            write!(f, " [disabled by cmd]")?;
+        }
+
+        if (ioflg & PCI_IORESOURCE_PCI_EA_BEI) != 0 {
+            write!(f, " [enhanced]")?;
+        }
+
+        fmt_size(f, len)?;
+
+        writeln!(f)?;
         Ok(())
     }
+
     fn fmt_capabilities(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let device = self.data;
         let LspciView {
@@ -668,38 +797,40 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             vendor_device_subsystem: vds,
             ..
         } = self.view;
-        let cap_view = CapabilityView { view: &view, device, vds, };
         if !device.header.status.capabilities_list {
-            return Ok(())
+            return Ok(());
         }
         let mut maybe_pci_express = None;
+        let caps_view = CapsView {
+            view: &view,
+            device,
+            vds,
+        };
         if let Some(caps) = device.capabilities() {
             for cap in caps {
                 match cap {
                     Ok(cap) => {
-                        write!(f, "{}", cap.display(&cap_view))?;
+                        write!(f, "{}", cap.display(&caps_view))?;
                         if let CapabilityKind::PciExpress(pci_express) = cap.kind {
                             maybe_pci_express = Some(pci_express);
                         }
-                    },
-                    Err(err) => writeln!(f, "ERROR {}", err)?,
+                    }
+                    Err(err) => write!(f, "{}", err.display(()))?,
                 }
             }
         } else {
             writeln!(f, "\tCapabilities: <access denied>")?;
         };
+        let ecaps_view = EcapsView {
+            view: &view,
+            device,
+            maybe_pci_express: maybe_pci_express.as_ref(),
+        };
         if let Some(ecaps) = device.extended_capabilities() {
             for ecap in ecaps {
                 match ecap {
-                    Ok(ecap) =>
-                        write!(f, "{}",
-                            ecap.display(EcapsView {
-                                view: &view,
-                                maybe_pci_express: maybe_pci_express.as_ref(),
-                            })
-                        )?,
-                    Err(err) => 
-                        writeln!(f, "ERROR {}", err)?,
+                    Ok(ecap) => write!(f, "{}", ecap.display(&ecaps_view))?,
+                    Err(ecap_err) => write!(f, "{}", ecap_err.display(&ecaps_view))?,
                 }
             }
         }
@@ -741,11 +872,6 @@ fn fmt_range(f: &mut fmt::Formatter<'_>, base: u64, limit: u64, is_64bit: bool, 
 
 #[cfg(test)]
 mod tests {
-    use byte::{
-        ctx::*,
-        self,
-        BytesExt,
-    };
     use crate::{
         device::{
             Device,
@@ -771,7 +897,7 @@ mod tests {
         };
         static ref I9DC8: Device = {
             let data = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/device/8086:9dc8/config"));
-            let cs: ConfigurationSpace = data.read_with(&mut 0, LE).unwrap();
+            let cs: ConfigurationSpace = data.as_slice().try_into().unwrap();
             let address: Address = "00:1f.3".parse().unwrap();
             let mut device = Device::new(address, cs);
             // Emulate sized base_addresses

@@ -1,6 +1,5 @@
 use core::fmt;
 
-
 use crate::device;
 
 pub mod lspci;
@@ -10,31 +9,37 @@ pub mod lspci;
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Verbose(pub usize);
 
-
+/// Struct that has arbitrary [Display] implementations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MultiView<T, V> {
     pub data: T,
     pub view: V,
 }
 
-pub trait DisplayMultiView<'a> {
-    type Data;
-    type View;
-    fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View>;
-}
-
-pub trait DisplayMultiViewBasic<V> where Self: Sized {
+/// Trait that has .display() method for arbitrary view types
+pub trait DisplayMultiView<V>: Sized {
     fn display(&self, view: V) -> MultiView<&Self, V> {
         MultiView { data: self, view }
     }
 }
 
+pub struct View<T, const V: char>(pub T);
+
+impl fmt::Display for View<bool, '±'> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0 {
+            write!(f, "+")
+        } else {
+            write!(f, "-")
+        }
+    }
+}
 
 /// Boolean ,ultiple view
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BoolView {
-    // true: ✓, false: ✗
+    /// true: ✓, false: ✗
     CheckMark,
     /// true: +, false: -
     PlusMinus,
@@ -42,7 +47,7 @@ pub enum BoolView {
     Str(&'static str),
 }
 
-impl DisplayMultiViewBasic<BoolView> for bool {}
+impl DisplayMultiView<BoolView> for bool {}
 impl<'a> fmt::Display for MultiView<&'a bool, BoolView> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match (self.data, self.view) {
@@ -56,7 +61,6 @@ impl<'a> fmt::Display for MultiView<&'a bool, BoolView> {
     }
 }
 
-
 use device::Address;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,16 +69,15 @@ pub enum Domain {
     Always,
 }
 
-impl<'a> DisplayMultiView<'a> for Address {
-    type Data = &'a Address;
-    type View = Domain;
-    fn display(&'a self, view: Self::View) -> MultiView<Self::Data, Self::View> {
-        MultiView { data: self, view, }
-    }
-}
+impl DisplayMultiView<Domain> for Address {}
 impl<'a> fmt::Display for MultiView<&'a Address, Domain> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Address { domain: dom, bus: b, device: dev, function: fun } = self.data;
+        let Address {
+            domain: dom,
+            bus: b,
+            device: dev,
+            function: fun,
+        } = self.data;
         if self.view == Domain::Always || dom != &0 {
             write!(f, "{:04x}:{:02x}:{:02x}.{:x}", dom, b, dev, fun)
         } else {
@@ -83,13 +86,11 @@ impl<'a> fmt::Display for MultiView<&'a Address, Domain> {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
-    use pcics::capabilities::MessageSignaledInterrups;
     use super::*;
+    use pcics::capabilities::MessageSignaledInterrups;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn display_multiview_bool() {
@@ -98,7 +99,7 @@ mod tests {
         assert_eq!("+", (true).display(BoolView::PlusMinus).to_string());
         assert_eq!("-", (false).display(BoolView::PlusMinus).to_string());
     }
-    
+
     #[test]
     fn display_multiview_address() {
         let addr = Address::default();
@@ -108,10 +109,11 @@ mod tests {
 
     #[test]
     fn display_message_signal_interrupts() {
-        use byte::{ctx::LE, BytesExt};
-        let data = &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/device/8086:2030/config"))
-            [(0x60 + 2)..(0x60 + 0x18)];
-        let result: MessageSignaledInterrups = data.read_with(&mut 0, LE).unwrap();
+        let data = &include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/data/device/8086:2030/config"
+        ))[(0x60 + 2)..(0x60 + 0x18)];
+        let result: MessageSignaledInterrups = data.try_into().unwrap();
         let sample = "\
             MSI: Enable+ Count=1/2 Maskable+ 64bit-\n\
             \t\tAddress: fee00038  Data: 0000\n\
@@ -120,4 +122,3 @@ mod tests {
         assert_eq!(sample, format!("{}", result.display(Verbose(3))));
     }
 }
-

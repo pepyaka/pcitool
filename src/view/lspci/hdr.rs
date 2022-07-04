@@ -2,9 +2,9 @@ use core::fmt;
 
 use pcics::header::{Command, Status, DevselTiming};
 
-use crate::view::{DisplayMultiViewBasic, MultiView, BoolView};
+use crate::view::{DisplayMultiView, MultiView, BoolView};
 
-impl<'a> DisplayMultiViewBasic<()> for Command {}
+impl<'a> DisplayMultiView<()> for Command {}
 impl<'a> fmt::Display for MultiView<&'a Command, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.data;
@@ -25,7 +25,7 @@ impl<'a> fmt::Display for MultiView<&'a Command, ()> {
     }
 }
 
-impl<'a> DisplayMultiViewBasic<()> for Status<'P'> {}
+impl<'a> DisplayMultiView<()> for Status<'P'> {}
 impl<'a> fmt::Display for MultiView<&'a Status<'P'>, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.data;
@@ -48,7 +48,7 @@ impl<'a> fmt::Display for MultiView<&'a Status<'P'>, ()> {
     }
 }
 
-impl<'a> DisplayMultiViewBasic<()> for Status<'B'> {}
+impl<'a> DisplayMultiView<()> for Status<'B'> {}
 impl<'a> fmt::Display for MultiView<&'a Status<'B'>, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.data;
@@ -67,7 +67,7 @@ impl<'a> fmt::Display for MultiView<&'a Status<'B'>, ()> {
     }
 }
 
-impl<'a> DisplayMultiViewBasic<()> for Status<'C'> {}
+impl<'a> DisplayMultiView<()> for Status<'C'> {}
 impl<'a> fmt::Display for MultiView<&'a Status<'C'>, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.data;
@@ -79,7 +79,7 @@ impl<'a> fmt::Display for MultiView<&'a Status<'C'>, ()> {
     }
 }
 
-impl<'a> DisplayMultiViewBasic<()> for DevselTiming {}
+impl<'a> DisplayMultiView<()> for DevselTiming {}
 impl<'a> fmt::Display for MultiView<&'a DevselTiming, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.data {

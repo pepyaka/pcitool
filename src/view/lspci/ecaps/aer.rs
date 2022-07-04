@@ -3,7 +3,7 @@ use core::fmt;
 use pcics::extended_capabilities::AdvancedErrorReporting;
 use crate::{
     view::{
-        DisplayMultiViewBasic,
+        DisplayMultiView,
         MultiView,
         BoolView
     },
@@ -17,7 +17,7 @@ pub struct AerView {
 }
 
 
-impl<'a> DisplayMultiViewBasic<AerView> for AdvancedErrorReporting {}
+impl<'a> DisplayMultiView<AerView> for AdvancedErrorReporting {}
 impl<'a> fmt::Display for MultiView<&'a AdvancedErrorReporting, AerView> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let AerView { verbose, is_type_root } = self.view;
@@ -126,7 +126,7 @@ impl<'a> fmt::Display for MultiView<&'a AdvancedErrorReporting, AerView> {
             aer_caps.completion_timeout_prefix_or_header_log_capable.display(BoolView::PlusMinus),
         )?;
         write!(f, "\t\tHeaderLog: {:08x} {:08x} {:08x} {:08x}\n", hl.0[0], hl.0[1], hl.0[2], hl.0[3])?;
-        if is_type_root {
+        if let (true, Some(root_cmd), Some(root_st), Some(esi)) = (is_type_root, root_cmd, root_st, esi) {
             write!(f,
                 "\t\tRootCmd: CERptEn{} NFERptEn{} FERptEn{}\n",
                 root_cmd.correctable_error_reporting_enable.display(BoolView::PlusMinus),

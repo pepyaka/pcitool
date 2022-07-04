@@ -15,6 +15,7 @@ lazy_static = "1.4.0"
 modular-bitfield = "0.11.2"
 displaydoc = "0.2.2"
 byte = "0.2.6"
+heterob = "0.2.0"
 kmod = { version = "0.4.0", optional = true }
 pcics = { path = "../pcics" }
 # pcics = "0.1"
@@ -22,17 +23,27 @@ pcics = { path = "../pcics" }
 [dev-dependencies]
 pretty_assertions = "0.7"
 regex = "1.5"
-tempfile = "3.2"
+tempfile = "3.3"
 rand = "0.8"
 serde_json = "1.0.64"
+seq-macro = "0.3.0"
+paste = "1.0.7"
 
 [build-dependencies]
 cc = "1.0"
 
 [features]
 sudo = []
+pciutils_3_7 = [
+  "ls_ecaps_rclink_eltype",
+  "ls_ecaps_rclink_cfgspace",
+  "ls_caps_agp_isoch_support",
+]
+ls_ecaps_rclink_eltype = []
+ls_ecaps_rclink_cfgspace = []
+ls_caps_agp_isoch_support = []
 
-[[bin]]         
+[[bin]]
 name = "pci"
 required-features = ["clap", "kmod"]
 

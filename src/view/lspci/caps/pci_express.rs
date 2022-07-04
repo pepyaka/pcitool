@@ -13,7 +13,7 @@ use pcics::capabilities::pci_express::{
 };
 
 use crate::device;
-use crate::view::{DisplayMultiViewBasic,BoolView,MultiView};
+use crate::view::{DisplayMultiView,BoolView,MultiView};
 
 
 const LATENCY_L0S: [&str; 8] = [
@@ -31,7 +31,7 @@ pub struct PciExpressView<'a> {
     pub device: &'a device::Device,
 }
 
-impl<'a> DisplayMultiViewBasic<PciExpressView<'a>> for PciExpress {}
+impl<'a> DisplayMultiView<PciExpressView<'a>> for PciExpress {}
 impl<'a> fmt::Display for MultiView<&'a PciExpress, PciExpressView<'a>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.verbose;
@@ -247,6 +247,7 @@ impl<'a> MultiView<&'a PciExpress, PciExpressView<'a>> {
             ctrl.link_bandwidth_management_interrupt_enable.display(BoolView::PlusMinus),
             ctrl.link_autonomous_bandwidth_interrupt_enable.display(BoolView::PlusMinus),
         )?;
+        // write!(f, "{} {}", u8::from(st.negotiated_link_width.clone()), u8::from(caps.maximum_link_width.clone()))?;
         writeln!(f,
             "\t\tLnkSta:\tSpeed {} ({}), Width {} ({})",
             st.current_link_speed.display(()),
@@ -535,7 +536,7 @@ impl<'a> MultiView<&'a PciExpress, PciExpressView<'a>> {
 }
 
 
-impl DisplayMultiViewBasic<()> for ExtendedTagFieldSupported {}
+impl DisplayMultiView<()> for ExtendedTagFieldSupported {}
 impl<'a> fmt::Display for MultiView<&'a ExtendedTagFieldSupported, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.data {
@@ -545,7 +546,7 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedTagFieldSupported, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for MaxSize {}
+impl DisplayMultiView<()> for MaxSize {}
 impl<'a> fmt::Display for MultiView<&'a MaxSize, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let size: usize = 128 << (*self.data as u8);
@@ -556,7 +557,7 @@ impl<'a> fmt::Display for MultiView<&'a MaxSize, ()> {
 /// Components that support only the 2.5 GT/s speed are permitted to hardwire [LinkSpeed] to 0000b.
 pub struct SupportOnly2GTps;
 
-impl DisplayMultiViewBasic<()> for LinkSpeed {}
+impl DisplayMultiView<()> for LinkSpeed {}
 impl fmt::Display for MultiView<&LinkSpeed, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.data {
@@ -570,7 +571,7 @@ impl fmt::Display for MultiView<&LinkSpeed, ()> {
         }
     }
 }
-impl DisplayMultiViewBasic<SupportOnly2GTps> for LinkSpeed {}
+impl DisplayMultiView<SupportOnly2GTps> for LinkSpeed {}
 impl fmt::Display for MultiView<&LinkSpeed, SupportOnly2GTps> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let LinkSpeed::Reserved(0) = self.data {
@@ -582,7 +583,7 @@ impl fmt::Display for MultiView<&LinkSpeed, SupportOnly2GTps> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for LinkWidth {}
+impl DisplayMultiView<()> for LinkWidth {}
 impl fmt::Display for MultiView<&LinkWidth, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.data {
@@ -604,7 +605,7 @@ enum AspmView {
     Enabled,
 }
 
-impl DisplayMultiViewBasic<AspmView> for ActiveStatePowerManagement {}
+impl DisplayMultiView<AspmView> for ActiveStatePowerManagement {}
 impl fmt::Display for MultiView<&ActiveStatePowerManagement, AspmView> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ActiveStatePowerManagement::*;
@@ -621,35 +622,35 @@ impl fmt::Display for MultiView<&ActiveStatePowerManagement, AspmView> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for EndpointL0sAcceptableLatency {}
+impl DisplayMultiView<()> for EndpointL0sAcceptableLatency {}
 impl fmt::Display for MultiView<&EndpointL0sAcceptableLatency, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", LATENCY_L0S[(*self.data as usize)])
     }
 }
 
-impl DisplayMultiViewBasic<()> for EndpointL1AcceptableLatency {}
+impl DisplayMultiView<()> for EndpointL1AcceptableLatency {}
 impl fmt::Display for MultiView<&EndpointL1AcceptableLatency, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", LATENCY_L1[(*self.data as usize)])
     }
 }
 
-impl DisplayMultiViewBasic<()> for L0sExitLatency {}
+impl DisplayMultiView<()> for L0sExitLatency {}
 impl fmt::Display for MultiView<&L0sExitLatency, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", LATENCY_L0S[(*self.data as usize)])
     }
 }
 
-impl DisplayMultiViewBasic<()> for L1ExitLatency {}
+impl DisplayMultiView<()> for L1ExitLatency {}
 impl fmt::Display for MultiView<&L1ExitLatency, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", LATENCY_L1[(*self.data as usize)])
     }
 }
 
-impl DisplayMultiViewBasic<()> for IndicatorControl {}
+impl DisplayMultiView<()> for IndicatorControl {}
 impl fmt::Display for MultiView<&IndicatorControl, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.data {
@@ -661,7 +662,7 @@ impl fmt::Display for MultiView<&IndicatorControl, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for CompletionTimeoutRanges {}
+impl DisplayMultiView<()> for CompletionTimeoutRanges {}
 impl fmt::Display for MultiView<&CompletionTimeoutRanges, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -679,7 +680,7 @@ impl fmt::Display for MultiView<&CompletionTimeoutRanges, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for LnSystemCls {}
+impl DisplayMultiView<()> for LnSystemCls {}
 impl fmt::Display for MultiView<&LnSystemCls, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -692,7 +693,7 @@ impl fmt::Display for MultiView<&LnSystemCls, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for EmergencyPowerReduction {}
+impl DisplayMultiView<()> for EmergencyPowerReduction {}
 impl fmt::Display for MultiView<&EmergencyPowerReduction, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -705,7 +706,7 @@ impl fmt::Display for MultiView<&EmergencyPowerReduction, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for Obff {}
+impl DisplayMultiView<()> for Obff {}
 impl fmt::Display for MultiView<&Obff, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -718,7 +719,7 @@ impl fmt::Display for MultiView<&Obff, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for TphCompleter {}
+impl DisplayMultiView<()> for TphCompleter {}
 impl fmt::Display for MultiView<&TphCompleter, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -731,7 +732,7 @@ impl fmt::Display for MultiView<&TphCompleter, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for CompletionTimeoutValue {}
+impl DisplayMultiView<()> for CompletionTimeoutValue {}
 impl fmt::Display for MultiView<&CompletionTimeoutValue, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -750,7 +751,7 @@ impl fmt::Display for MultiView<&CompletionTimeoutValue, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for ObffEnable {}
+impl DisplayMultiView<()> for ObffEnable {}
 impl fmt::Display for MultiView<&ObffEnable, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -763,7 +764,7 @@ impl fmt::Display for MultiView<&ObffEnable, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for DeEmphasis {}
+impl DisplayMultiView<()> for DeEmphasis {}
 impl fmt::Display for MultiView<&DeEmphasis, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -774,7 +775,7 @@ impl fmt::Display for MultiView<&DeEmphasis, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for TransmitMargin {}
+impl DisplayMultiView<()> for TransmitMargin {}
 impl fmt::Display for MultiView<&TransmitMargin, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data.0 {
@@ -787,7 +788,7 @@ impl fmt::Display for MultiView<&TransmitMargin, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<LinkSpeed> for CompliancePresetOrDeEmphasis {}
+impl DisplayMultiView<LinkSpeed> for CompliancePresetOrDeEmphasis {}
 impl fmt::Display for MultiView<&CompliancePresetOrDeEmphasis, LinkSpeed> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match (&self.view, self.data.0) {
@@ -799,7 +800,7 @@ impl fmt::Display for MultiView<&CompliancePresetOrDeEmphasis, LinkSpeed> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for CrosslinkResolution {}
+impl DisplayMultiView<()> for CrosslinkResolution {}
 impl fmt::Display for MultiView<&CrosslinkResolution, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -812,7 +813,7 @@ impl fmt::Display for MultiView<&CrosslinkResolution, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for DownstreamComponentPresence {}
+impl DisplayMultiView<()> for DownstreamComponentPresence {}
 impl fmt::Display for MultiView<&DownstreamComponentPresence, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.data {
@@ -827,7 +828,7 @@ impl fmt::Display for MultiView<&DownstreamComponentPresence, ()> {
     }
 }
 
-impl DisplayMultiViewBasic<()> for SupportedLinkSpeedsVector {}
+impl DisplayMultiView<()> for SupportedLinkSpeedsVector {}
 impl fmt::Display for MultiView<&SupportedLinkSpeedsVector, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let SupportedLinkSpeedsVector {
