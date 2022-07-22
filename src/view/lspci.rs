@@ -830,7 +830,7 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             for ecap in ecaps {
                 match ecap {
                     Ok(ecap) => write!(f, "{}", ecap.display(&ecaps_view))?,
-                    Err(ecap_err) => write!(f, "{}", ecap_err.display(&ecaps_view))?,
+                    Err(ecap_err) => write!(f, "{}", View((&ecap_err, &ecaps_view)))?,
                 }
             }
         }

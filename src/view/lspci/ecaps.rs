@@ -3,31 +3,26 @@ use core::fmt;
 use pcics::{
     capabilities::PciExpress,
     extended_capabilities::{
-        ExtendedCapability,
-        ExtendedCapabilityKind,
-        DeviceSerialNumber,
-        LatencyToleranceReporting,
-        SecondaryPciExpress,
-        L1PmSubstates,
-        ProcessAddressSpaceId,
-        VendorSpecificExtendedCapability,
-        AddressTranslationServices, PageRequestInterface, AccessControlServices,
-        PrecisionTimeMeasurement, DownstreamPortContainment, PowerBudgeting,
-        AlternativeRoutingIdInterpretation, TphRequester,
-        tph_requester::StTable, ExtendedCapabilityError,
-    }
+        multifunction_virtual_channel::MultifunctionVirtualChannelError, tph_requester::StTable,
+        AccessControlServices, AddressTranslationServices, AlternativeRoutingIdInterpretation,
+        DeviceSerialNumber, DownstreamPortContainment, ExtendedCapability, ExtendedCapabilityError,
+        ExtendedCapabilityKind, L1PmSubstates, LatencyToleranceReporting,
+        MultifunctionVirtualChannel, PageRequestInterface, PowerBudgeting,
+        PrecisionTimeMeasurement, ProcessAddressSpaceId,
+        RootComplexEventCollectorEndpointAssociation, RootComplexInternalLinkControl,
+        SecondaryPciExpress, TphRequester, VendorSpecificExtendedCapability, RootComplexRegisterBlockHeader,
+    },
 };
 
-use crate::{view::{
-    MultiView,
-    DisplayMultiView, Verbose, BoolView,
-}, device::Device};
+use crate::{
+    device::Device,
+    view::{BoolView, DisplayMultiView, MultiView, Verbose},
+};
 
 use self::aer::AerView;
 use self::vc::VcView;
 
-use super::BasicView;
-
+use super::{BasicView, View};
 
 pub struct EcapsView<'a> {
     pub view: &'a BasicView,
@@ -35,14 +30,16 @@ pub struct EcapsView<'a> {
     pub maybe_pci_express: Option<&'a PciExpress>,
 }
 
-impl<'a> DisplayMultiView<&'a EcapsView<'a>> for ExtendedCapabilityError {}
-impl<'a> fmt::Display for MultiView<&'a ExtendedCapabilityError, &'a EcapsView<'a>> {
+impl<'a> fmt::Display for View<(&'a ExtendedCapabilityError, &'a EcapsView<'a>)> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let EcapsView {
-            view: &BasicView { verbose, .. },
-            ..
-        } = self.view;
-        let (offset, msg) = match self.data {
+        let (
+            data,
+            EcapsView {
+                view: &BasicView { verbose, .. },
+                ..
+            },
+        ) = self.0;
+        let (offset, msg) = match data {
             offset @ ExtendedCapabilityError::Offset => (&0, format!("{}", offset)),
             header @ ExtendedCapabilityError::Header { offset } => (offset, format!("{}", header)),
             header @ ExtendedCapabilityError::EmptyHeader { offset } => {
@@ -61,17 +58,16 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapabilityError, &'a EcapsView<'
             ExtendedCapabilityError::DownstreamPortContainment { offset, source } => {
                 (offset, format!("{}", source))
             }
+            ExtendedCapabilityError::MultifunctionVirtualChannel { offset, source } => {
+                (offset, format!("{}", View(source)))
+            }
         };
         let ver = if verbose > 1 { " v0" } else { "" };
         write!(f, "\tCapabilities: [{:03x}{}] {}", offset, ver, msg)
     }
 }
 
-
-
-
-
-impl<'a>DisplayMultiView<&'a EcapsView<'a>> for ExtendedCapability<'a> {}
+impl<'a> DisplayMultiView<&'a EcapsView<'a>> for ExtendedCapability<'a> {}
 impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let EcapsView {
@@ -116,9 +112,25 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a
             ExtendedCapabilityKind::RootComplexLinkDeclaration(c) => {
                 write!(f, "{}", c.display(Verbose(verbose)))
             }
+            // 0006h
+            ExtendedCapabilityKind::RootComplexInternalLinkControl(c) => {
+                write!(f, "{}", View(c))
+            }
+            // 0007h
+            ExtendedCapabilityKind::RootComplexEventCollectorEndpointAssociation(c) => {
+                write!(f, "{}", View(c))
+            }
+            // 0008h
+            ExtendedCapabilityKind::MultifunctionVirtualChannel(c) => {
+                write!(f, "{}", View(c))
+            }
             // 0009h
             ExtendedCapabilityKind::VirtualChannelMfvcPresent(c) => {
                 write!(f, "{}", c.display(VcView { verbose, offset }))
+            }
+            // 000Ah
+            ExtendedCapabilityKind::RootComplexRegisterBlockHeader(c) => {
+                write!(f, "{}", View(c))
             }
             // 000Bh
             ExtendedCapabilityKind::VendorSpecificExtendedCapability(c) => {
@@ -185,13 +197,11 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a
     }
 }
 
-
-
-
 // 0001h Advanced Error Reporting (AER)
 mod aer;
 
 // 0002h Virtual Channel (VC)
+// 0009h Virtual Channel (VC) – used if an MFVC Extended Cap structure is present in the device
 mod vc;
 
 // 0003h Device Serial Number
@@ -212,12 +222,11 @@ impl<'a> fmt::Display for MultiView<&'a DeviceSerialNumber, ()> {
     }
 }
 
-
 // 0004h Power Budgeting
 impl<'a> DisplayMultiView<()> for PowerBudgeting {}
 impl<'a> fmt::Display for MultiView<&'a PowerBudgeting, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            writeln!(f, "Power Budgeting <?>")
+        writeln!(f, "Power Budgeting <?>")
     }
 }
 
@@ -225,10 +234,37 @@ impl<'a> fmt::Display for MultiView<&'a PowerBudgeting, ()> {
 mod rclink;
 
 // 0006h Root Complex Internal Link Control
+impl<'a> fmt::Display for View<&'a RootComplexInternalLinkControl> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Root Complex Internal Link <?>")
+    }
+}
+
 // 0007h Root Complex Event Collector Endpoint Association
+impl<'a> fmt::Display for View<&'a RootComplexEventCollectorEndpointAssociation> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Root Complex Event Collector <?>")
+    }
+}
+
 // 0008h Multi-Function Virtual Channel (MFVC)
-// 0009h Virtual Channel (VC) – used if an MFVC Extended Cap structure is present in the device
+impl<'a> fmt::Display for View<&'a MultifunctionVirtualChannel<'a>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Multi-Function Virtual Channel <?>")
+    }
+}
+impl<'a> fmt::Display for View<&'a MultifunctionVirtualChannelError> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Multi-Function Virtual Channel <?>")
+    }
+}
+
 // 000Ah Root Complex Register Block (RCRB) Header
+impl<'a> fmt::Display for View<&'a RootComplexRegisterBlockHeader> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Root Complex Register Block <?>")
+    }
+}
 
 // 000Bh Vendor-Specific Extended Capability (VSEC)
 impl<'a> DisplayMultiView<()> for VendorSpecificExtendedCapability<'a> {}
@@ -243,12 +279,11 @@ impl<'a> fmt::Display for MultiView<&'a VendorSpecificExtendedCapability<'a>, ()
     }
 }
 
-
 // 000Ch Configuration Access Correlation (CAC) – defined by the Trusted Configuration Space (TCS) for PCI Express ECN, which is no longer supported
 
-// 000Dh Access Control Services (ACS) 
+// 000Dh Access Control Services (ACS)
 impl<'a> DisplayMultiView<Verbose> for AccessControlServices<'a> {}
-impl<'a> fmt::Display for MultiView<&'a AccessControlServices<'a,>, Verbose> {
+impl<'a> fmt::Display for MultiView<&'a AccessControlServices<'a>, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
         writeln!(f, "Access Control Services")?;
@@ -296,22 +331,27 @@ impl<'a> fmt::Display for MultiView<&'a AlternativeRoutingIdInterpretation, Verb
             ari_capability: caps,
             ari_control: ctrl,
         } = self.data;
-        writeln!(f,
-            "\t\tARICap:\tMFVC{} ACS{}, Next Function: {}", 
-            caps.mfvc_function_groups_capability.display(BoolView::PlusMinus),
-            caps.acs_function_groups_capability.display(BoolView::PlusMinus),
+        writeln!(
+            f,
+            "\t\tARICap:\tMFVC{} ACS{}, Next Function: {}",
+            caps.mfvc_function_groups_capability
+                .display(BoolView::PlusMinus),
+            caps.acs_function_groups_capability
+                .display(BoolView::PlusMinus),
             caps.next_function_number,
         )?;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tARICtl:\tMFVC{} ACS{}, Function Group: {}",
-            ctrl.mfvc_function_groups_enable.display(BoolView::PlusMinus),
+            ctrl.mfvc_function_groups_enable
+                .display(BoolView::PlusMinus),
             ctrl.acs_function_groups_enable.display(BoolView::PlusMinus),
             ctrl.function_group,
         )
     }
 }
 
-// 000Fh Address Translation Services (ATS) 
+// 000Fh Address Translation Services (ATS)
 impl<'a> DisplayMultiView<Verbose> for AddressTranslationServices {}
 impl<'a> fmt::Display for MultiView<&'a AddressTranslationServices, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -324,11 +364,13 @@ impl<'a> fmt::Display for MultiView<&'a AddressTranslationServices, Verbose> {
             ats_capability: caps,
             ats_control: ctrl,
         } = self.data;
-        writeln!(f,
-            "\t\tATSCap:\tInvalidate Queue Depth: {:02x}", 
+        writeln!(
+            f,
+            "\t\tATSCap:\tInvalidate Queue Depth: {:02x}",
             caps.invalidate_queue_depth,
         )?;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tATSCtl:\tEnable{}, Smallest Translation Unit: {:02x}",
             ctrl.enable.display(BoolView::PlusMinus),
             ctrl.smallest_translation_unit,
@@ -357,21 +399,24 @@ impl<'a> fmt::Display for MultiView<&'a PageRequestInterface, Verbose> {
             outstanding_page_request_capacity,
             outstanding_page_request_allocation,
         } = self.data;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tPRICtl: Enable{} Reset{}",
             ctrl.enable.display(BoolView::PlusMinus),
             ctrl.reset.display(BoolView::PlusMinus),
         )?;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tPRISta: RF{} UPRGI{} Stopped{}",
             sta.response_failure.display(BoolView::PlusMinus),
-            sta.unexpected_page_request_group_index.display(BoolView::PlusMinus),
+            sta.unexpected_page_request_group_index
+                .display(BoolView::PlusMinus),
             sta.stopped.display(BoolView::PlusMinus),
         )?;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tPage Request Capacity: {:08x}, Page Request Allocation: {:08x}",
-            outstanding_page_request_capacity,
-            outstanding_page_request_allocation,
+            outstanding_page_request_capacity, outstanding_page_request_allocation,
         )
     }
 }
@@ -403,16 +448,13 @@ impl<'a> fmt::Display for MultiView<&'a TphRequester<'a>, Verbose> {
             writeln!(f, "\t\tExtended requester support")?;
         }
         match caps.st_table {
-            StTable::NotPresent =>
-                writeln!(f, "\t\tNo steering table available"),
-            StTable::Valid { .. } =>
-                writeln!(f, "\t\tSteering table in TPH capability structure"),
-            StTable::Invalid { .. } =>
-                writeln!(f, "\t\tSteering table in TPH capability structure"),
-            StTable::MsiXTable { .. } =>
-                writeln!(f, "\t\tSteering table in MSI-X table"),
-            StTable::Reserved =>
-                writeln!(f, "\t\tReserved steering table location"),
+            StTable::NotPresent => writeln!(f, "\t\tNo steering table available"),
+            StTable::Valid { .. } => writeln!(f, "\t\tSteering table in TPH capability structure"),
+            StTable::Invalid { .. } => {
+                writeln!(f, "\t\tSteering table in TPH capability structure")
+            }
+            StTable::MsiXTable { .. } => writeln!(f, "\t\tSteering table in MSI-X table"),
+            StTable::Reserved => writeln!(f, "\t\tReserved steering table location"),
         }
     }
 }
@@ -428,9 +470,9 @@ impl<'a> fmt::Display for MultiView<&'a LatencyToleranceReporting, Verbose> {
         }
         let LatencyToleranceReporting {
             max_snoop_latency: snoop,
-            max_no_snoop_latency: nosnoop
+            max_no_snoop_latency: nosnoop,
         } = self.data;
-        
+
         // lspci has simple value to scale multiplication, although scale can't be > 5
         fn calc(value: u16, scale: u8) -> u64 {
             // PCI_LTR_VALUE_MASK
@@ -439,8 +481,16 @@ impl<'a> fmt::Display for MultiView<&'a LatencyToleranceReporting, Verbose> {
             value * (scale as u64)
         }
 
-        writeln!(f, "\t\tMax snoop latency: {}ns", calc(snoop.value, snoop.scale))?;
-        writeln!(f, "\t\tMax no snoop latency: {}ns", calc(nosnoop.value, nosnoop.scale))
+        writeln!(
+            f,
+            "\t\tMax snoop latency: {}ns",
+            calc(snoop.value, snoop.scale)
+        )?;
+        writeln!(
+            f,
+            "\t\tMax no snoop latency: {}ns",
+            calc(nosnoop.value, nosnoop.scale)
+        )
     }
 }
 
@@ -458,9 +508,11 @@ impl<'a> fmt::Display for MultiView<&'a SecondaryPciExpress<'a>, Verbose> {
             lane_error_status,
             ..
         } = self.data;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tLnkCtl3: LnkEquIntrruptEn{} PerformEqu{}",
-            ctrl.link_equalization_request_interrupt_enable.display(BoolView::PlusMinus),
+            ctrl.link_equalization_request_interrupt_enable
+                .display(BoolView::PlusMinus),
             ctrl.perform_equalization.display(BoolView::PlusMinus),
         )?;
         let mut lane_err_sta = lane_error_status.0 as u16;
@@ -485,7 +537,7 @@ impl<'a> fmt::Display for MultiView<&'a SecondaryPciExpress<'a>, Verbose> {
 
 // 001Ah Protocol Multiplexing (PMUX)
 
-// 001Bh Process Address Space ID (PASID) 
+// 001Bh Process Address Space ID (PASID)
 impl<'a> DisplayMultiView<Verbose> for ProcessAddressSpaceId {}
 impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -498,13 +550,16 @@ impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
             pacid_capability: caps,
             pacid_control: ctrl,
         } = self.data;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tPASIDCap: Exec{} Priv{}, Max PASID Width: {:02x}",
-            caps.execute_permission_supported.display(BoolView::PlusMinus),
+            caps.execute_permission_supported
+                .display(BoolView::PlusMinus),
             caps.privileged_mode_supported.display(BoolView::PlusMinus),
             caps.max_pasid_width,
         )?;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tPASIDCtl: Enable{} Exec{} Priv{}",
             ctrl.pasid_enable.display(BoolView::PlusMinus),
             ctrl.execute_permission_enable.display(BoolView::PlusMinus),
@@ -516,12 +571,18 @@ impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
 
 // 001Ch LN Requester (LNR)
 
-struct DpcView { verbose: usize, maybe_raw_dpc_trigger_reason_extension: Option<u8> }
+struct DpcView {
+    verbose: usize,
+    maybe_raw_dpc_trigger_reason_extension: Option<u8>,
+}
 // 001Dh Downstream Port Containment (DPC)
 impl<'a> DisplayMultiView<DpcView> for DownstreamPortContainment {}
 impl<'a> fmt::Display for MultiView<&'a DownstreamPortContainment, DpcView> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let DpcView { verbose, maybe_raw_dpc_trigger_reason_extension } = self.view;
+        let DpcView {
+            verbose,
+            maybe_raw_dpc_trigger_reason_extension,
+        } = self.view;
         writeln!(f, "Downstream Port Containment")?;
         if verbose < 2 {
             return Ok(());
@@ -579,7 +640,8 @@ impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
             l1_pm_substates_control_1: ctl1,
             l1_pm_substates_control_2: ctl2,
         } = self.data;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tL1SubCap: PCI-PM_L1.2{} PCI-PM_L1.1{} ASPM_L1.2{} ASPM_L1.1{} L1_PM_Substates{}",
             caps.pci_pm_l1_2_supported.display(BoolView::PlusMinus),
             caps.pci_pm_l1_1_supported.display(BoolView::PlusMinus),
@@ -587,12 +649,15 @@ impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
             caps.aspm_l1_1_supported.display(BoolView::PlusMinus),
             // caps.l1_pm_substates_supported.display(BoolView::PlusMinus),
             // There is the bug in lspci: PCI_L1PM_SUBSTAT_CAP_L1PM_SUPP should be 0x10 not 0x16
-            (caps.pci_pm_l1_1_supported || caps.aspm_l1_2_supported || caps.l1_pm_substates_supported)
+            (caps.pci_pm_l1_1_supported
+                || caps.aspm_l1_2_supported
+                || caps.l1_pm_substates_supported)
                 .display(BoolView::PlusMinus),
         )?;
         let is_l1_2_supported = caps.pci_pm_l1_2_supported || caps.aspm_l1_2_supported;
         if is_l1_2_supported {
-            write!(f,
+            write!(
+                f,
                 "\t\t\t  PortCommonModeRestoreTime={}us ",
                 caps.port_common_mode_restore_time
             )?;
@@ -602,7 +667,8 @@ impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
                 writeln!(f, "PortTPowerOnTime=<error>")?;
             };
         }
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tL1SubCtl1: PCI-PM_L1.2{} PCI-PM_L1.1{} ASPM_L1.2{} ASPM_L1.1{}",
             ctl1.pci_pm_l1_2_enable.display(BoolView::PlusMinus),
             ctl1.pci_pm_l1_1_enable.display(BoolView::PlusMinus),
@@ -610,7 +676,11 @@ impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
             ctl1.aspm_l1_1_enable.display(BoolView::PlusMinus),
         )?;
         if is_l1_2_supported {
-            write!(f, "\t\t\t   T_CommonMode={}us", ctl1.common_mode_restore_time)?;
+            write!(
+                f,
+                "\t\t\t   T_CommonMode={}us",
+                ctl1.common_mode_restore_time
+            )?;
             if caps.aspm_l1_2_supported {
                 if ctl1.ltr_l1_2_threshold.scale > 5 {
                     write!(f, " LTR1.2_Threshold=<error>")?;
@@ -632,7 +702,7 @@ impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
     }
 }
 
-// 001Fh Precision Time Measurement (PTM) 
+// 001Fh Precision Time Measurement (PTM)
 impl<'a> DisplayMultiView<Verbose> for PrecisionTimeMeasurement {}
 impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -645,7 +715,8 @@ impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
             ptm_capability: caps,
             ptm_control: ctrl,
         } = self.data;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tPTMCap: Requester:{} Responder:{} Root:{}",
             caps.ptm_requester_capable.display(BoolView::PlusMinus),
             caps.ptm_responder_capable.display(BoolView::PlusMinus),
@@ -655,9 +726,10 @@ impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
         match caps.local_clock_granularity {
             0x00 => writeln!(f, "Unimplemented"),
             0xff => writeln!(f, "Greater than 254ns"),
-               v => writeln!(f, "{}ns", v),
+            v => writeln!(f, "{}ns", v),
         }?;
-        writeln!(f,
+        writeln!(
+            f,
             "\t\tPTMControl: Enabled:{} RootSelected:{}",
             ctrl.ptm_enable.display(BoolView::PlusMinus),
             ctrl.root_select.display(BoolView::PlusMinus),
@@ -666,7 +738,7 @@ impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
         match ctrl.effective_granularity {
             0x00 => writeln!(f, "Unknown"),
             0xff => writeln!(f, "Greater than 254ns"),
-               v => writeln!(f, "{}ns", v),
+            v => writeln!(f, "{}ns", v),
         }
     }
 }
