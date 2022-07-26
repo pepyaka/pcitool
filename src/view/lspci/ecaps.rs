@@ -5,12 +5,13 @@ use pcics::{
     extended_capabilities::{
         multifunction_virtual_channel::MultifunctionVirtualChannelError, tph_requester::StTable,
         AccessControlServices, AddressTranslationServices, AlternativeRoutingIdInterpretation,
-        DeviceSerialNumber, DownstreamPortContainment, ExtendedCapability, ExtendedCapabilityError,
-        ExtendedCapabilityKind, L1PmSubstates, LatencyToleranceReporting,
-        MultifunctionVirtualChannel, PageRequestInterface, PowerBudgeting,
-        PrecisionTimeMeasurement, ProcessAddressSpaceId,
+        ConfigurationAccessCorrelation, DeviceSerialNumber, DownstreamPortContainment,
+        ExtendedCapability, ExtendedCapabilityError, ExtendedCapabilityKind, L1PmSubstates,
+        LatencyToleranceReporting, MultifunctionVirtualChannel, PageRequestInterface,
+        PowerBudgeting, PrecisionTimeMeasurement, ProcessAddressSpaceId,
         RootComplexEventCollectorEndpointAssociation, RootComplexInternalLinkControl,
-        SecondaryPciExpress, TphRequester, VendorSpecificExtendedCapability, RootComplexRegisterBlockHeader,
+        RootComplexRegisterBlockHeader, SecondaryPciExpress, TphRequester,
+        VendorSpecificExtendedCapability,
     },
 };
 
@@ -192,6 +193,9 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a
             ExtendedCapabilityKind::PrecisionTimeMeasurement(c) => {
                 write!(f, "{}", c.display(Verbose(verbose)))
             }
+            ExtendedCapabilityKind::ConfigurationAccessCorrelation(_) => {
+                writeln!(f, "Extended Capability ID {:#x}", &self.data.id())
+            }
             _ => writeln!(f, "TODO {:?}", &self.data.kind),
         }
     }
@@ -279,7 +283,12 @@ impl<'a> fmt::Display for MultiView<&'a VendorSpecificExtendedCapability<'a>, ()
     }
 }
 
-// 000Ch Configuration Access Correlation (CAC) – defined by the Trusted Configuration Space (TCS) for PCI Express ECN, which is no longer supported
+// 000Ch Configuration Access Correlation (CAC)
+impl<'a> fmt::Display for View<&'a ConfigurationAccessCorrelation> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, " <?>")
+    }
+}
 
 // 000Dh Access Control Services (ACS)
 impl<'a> DisplayMultiView<Verbose> for AccessControlServices<'a> {}

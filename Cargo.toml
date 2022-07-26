@@ -42,6 +42,7 @@ pciutils_3_7 = [
 ls_ecaps_rclink_eltype = []
 ls_ecaps_rclink_cfgspace = []
 ls_caps_agp_isoch_support = []
+expensive_tests = []
 
 [[bin]]
 name = "pci"

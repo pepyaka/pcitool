@@ -137,7 +137,11 @@ mod fuzzing {
         "/tests/data/fuzzing/random"
     ));
 
-    const TEST_COUNT: usize = 64;
+    const TEST_COUNT: usize = if cfg!(feature = "expensive_tests") {
+        64
+    } else {
+        1
+    };
 
     const CAP_EA_FIXES: [(usize, u8, u8); 12 * 3] = [
         (0x44, 0b111, 0x02),
@@ -229,7 +233,7 @@ mod fuzzing {
             run_test(Param::Ecaps { id: N, htype: 0 });
         }
     });
-    
+
     #[test]
     fn capability_10_bridge() {
         run_test(Param::Caps { id: 10, htype: 1 });
@@ -241,8 +245,9 @@ mod fuzzing {
     }
 
     fn run_test(param: Param) {
-        let dump: String =
-            RANDOM_DATA.chunks_exact(4096).take(TEST_COUNT)
+        let dump: String = RANDOM_DATA
+            .chunks_exact(4096)
+            .take(TEST_COUNT)
             .chain(iter::once([u8::MIN; 4096].as_slice()))
             .chain(iter::once([u8::MAX; 4096].as_slice()))
             .enumerate()
@@ -252,10 +257,13 @@ mod fuzzing {
                 let len = add_fixtures(conf_space, param);
 
                 let (bus, dev, fun) = ((dn & 0xff00) >> 8, (dn & 0b11111000) >> 3, dn & 0b111);
-                let body = conf_space[..len].chunks_exact(16).enumerate().map(|(ln, hbytes)| {
-                    let hbytes: String = hbytes.iter().map(|b| format!(" {:02x}", b)).collect();
-                    format!("{:x}0:{}\n", ln, hbytes)
-                });
+                let body = conf_space[..len]
+                    .chunks_exact(16)
+                    .enumerate()
+                    .map(|(ln, hbytes)| {
+                        let hbytes: String = hbytes.iter().map(|b| format!(" {:02x}", b)).collect();
+                        format!("{:x}0:{}\n", ln, hbytes)
+                    });
                 Some(format!("{:02x}:{:02x}.{:x} _\n", bus, dev, fun))
                     .into_iter()
                     .chain(body)
@@ -274,16 +282,14 @@ mod fuzzing {
         ls(&args, true);
     }
 
-    
     fn add_fixtures(slice: &mut [u8], param: Param) -> usize {
         let mut fill_common_caps = |id, htype| {
-                slice[..64].fill(0);
-                slice[0x06] = 0x10; // Has capabilities
-                slice[0x0e] = htype; // Header type
-                slice[0x34] = 0x40; // Cap ptr
-                slice[0x40] = id; // Cap ID
-                slice[0x41] = 0; // Next cap ID
-            
+            slice[..64].fill(0);
+            slice[0x06] = 0x10; // Has capabilities
+            slice[0x0e] = htype; // Header type
+            slice[0x34] = 0x40; // Cap ptr
+            slice[0x40] = id; // Cap ID
+            slice[0x41] = 0; // Next cap ID
         };
         match param {
             Param::Header { htype } => {
@@ -320,5 +326,5 @@ mod fuzzing {
             }
         }
     }
-
 }
+
