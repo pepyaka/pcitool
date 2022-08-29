@@ -3,34 +3,29 @@ use core::fmt;
 #[cfg(feature = "clap")]
 use clap::Parser;
 
-use pcics::{
-    header::{
-        self, Command, HeaderType, InterruptPin, BridgeIoAddressRange,
-        BridgePrefetchableMemory, ClassCode, IoAccessAddressRange, Normal, Bridge, Cardbus,
-    },
-    capabilities::CapabilityKind, Header
-};
+use self::caps::CapsView;
+use crate::view::{BoolView, DisplayMultiView, MultiView};
 use crate::{
-    device::{
-        self,
-        Device,
-    },
+    device::{self, Device},
     pciids,
 };
-use crate::view::{BoolView, DisplayMultiView, MultiView};
-use self::{caps::CapsView, ecaps::EcapsView};
+use pcics::{
+    capabilities::CapabilityKind,
+    header::{
+        self, Bridge, BridgeIoAddressRange, BridgePrefetchableMemory, Cardbus, ClassCode, Command,
+        HeaderType, InterruptPin, IoAccessAddressRange, Normal,
+    },
+    Header,
+};
 
-
-mod hdr;
 mod caps;
 mod ecaps;
+mod hdr;
 
 #[cfg(feature = "kmod")]
 pub mod kmod;
 
-
 const PCI_IORESOURCE_PCI_EA_BEI: u64 = 1 << 5;
-
 
 pub struct Flag(pub bool);
 
@@ -42,6 +37,10 @@ impl fmt::Display for Flag {
 
 pub struct View<T>(T);
 
+struct VerboseView<T> {
+    pub(super) verbose: usize,
+    pub(super) data: T,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LspciView {
@@ -49,7 +48,6 @@ pub struct LspciView {
     pub vendor_device_subsystem: pciids::VendorDeviceSubsystem,
     pub class_code: pciids::ClassCode,
 }
-
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "clap", derive(Parser))]
@@ -91,7 +89,7 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         let LspciView {
             basic_view: view,
             vendor_device_subsystem: vds,
-            class_code: cc
+            class_code: cc,
         } = self.view;
         let device = self.data;
         // Device address
@@ -118,24 +116,28 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         let pciids_class = cc.lookup(class_code.base, None, None);
         let pciids_subclass = cc.lookup(class_code.base, class_code.sub, None);
         match (view.as_numbers, pciids_class, pciids_subclass) {
-            (0, _, Some(sub)) =>
-                write!(f, " {}:", sub)?,
-            (0, Some(base), _) if class_code.base == 0xff =>
-                write!(f, " {} [{:02x}{:02x}]:", base, class_code.base, class_code.sub)?,
-            (0, Some(base), _) =>
-                write!(f, " {}:", base)?,
-            (0, _, _) =>
-                write!(f, " Class [{:02x}{:02x}]:", class_code.base, class_code.sub)?,
+            (0, _, Some(sub)) => write!(f, " {}:", sub)?,
+            (0, Some(base), _) if class_code.base == 0xff => write!(
+                f,
+                " {} [{:02x}{:02x}]:",
+                base, class_code.base, class_code.sub
+            )?,
+            (0, Some(base), _) => write!(f, " {}:", base)?,
+            (0, _, _) => write!(f, " Class [{:02x}{:02x}]:", class_code.base, class_code.sub)?,
             // Args: -n
-            (1, _, _) =>
-                write!(f, " {:02x}{:02x}:", class_code.base, class_code.sub)?,
+            (1, _, _) => write!(f, " {:02x}{:02x}:", class_code.base, class_code.sub)?,
             // Args: -nn+
-            (_, _, Some(sub)) => 
-                write!(f, " {} [{:02x}{:02x}]:", sub, class_code.base, class_code.sub)?,
-            (_, Some(base), _) => 
-                write!(f, " {} [{:02x}{:02x}]:", base, class_code.base, class_code.sub)?,
-            _ => 
-                write!(f, " Class [{:02x}{:02x}]:", class_code.base, class_code.sub)?,
+            (_, _, Some(sub)) => write!(
+                f,
+                " {} [{:02x}{:02x}]:",
+                sub, class_code.base, class_code.sub
+            )?,
+            (_, Some(base), _) => write!(
+                f,
+                " {} [{:02x}{:02x}]:",
+                base, class_code.base, class_code.sub
+            )?,
+            _ => write!(f, " Class [{:02x}{:02x}]:", class_code.base, class_code.sub)?,
         }
         // TODO: Long string ellipsis:
         // if (res >= size && size >= 4)
@@ -151,7 +153,9 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             (0, Some(v), _) => write!(f, " {} Device {:04x}", v, device_id)?,
             (0, _, _) => write!(f, " Device {:04x}", device_id)?,
             (1, _, _) => write!(f, " {:04x}:{:04x}", vendor_id, device_id)?,
-            (_, Some(v), Some(d)) => write!(f, " {} {} [{:04x}:{:04x}]", v, d, vendor_id, device_id)?,
+            (_, Some(v), Some(d)) => {
+                write!(f, " {} {} [{:04x}:{:04x}]", v, d, vendor_id, device_id)?
+            }
             (_, Some(v), _) => write!(f, " {} Device [{:04x}:{:04x}]", v, vendor_id, device_id)?,
             _ => write!(f, " Device [{:04x}:{:04x}]", vendor_id, device_id)?,
         }
@@ -166,10 +170,10 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         if view.verbose > 0 {
             match (class_code.interface, pciids_prog_if) {
                 (0, None) => (),
-                (_, Some(prog_if)) =>
-                    write!(f, " (prog-if {:02x} [{}])", class_code.interface, prog_if)?,
-                _ =>
-                    write!(f, " (prog-if {:02x})", class_code.interface)?,
+                (_, Some(prog_if)) => {
+                    write!(f, " (prog-if {:02x} [{}])", class_code.interface, prog_if)?
+                }
+                _ => write!(f, " (prog-if {:02x})", class_code.interface)?,
             };
         }
         writeln!(f)?;
@@ -184,51 +188,67 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
                 sub_vendor_id: sub_vendor_id @ 0x0001..=0xFFFE,
                 sub_device_id,
                 ..
-            }) = device.header.header_type {
+            }) = device.header.header_type
+            {
                 let pciids_sub_vendor = vds.lookup(sub_vendor_id, None, None);
-                let pciids_sub_device = 
-                    vds.lookup(*vendor_id, *device_id, (sub_vendor_id, sub_device_id))
+                let pciids_sub_device = vds
+                    .lookup(*vendor_id, *device_id, (sub_vendor_id, sub_device_id))
                     .or_else(|| vds.lookup(sub_vendor_id, sub_device_id, None));
 
                 // PCI_LOOKUP_SUBSYSTEM | PCI_LOOKUP_VENDOR | PCI_LOOKUP_DEVICE
                 match (view.as_numbers, pciids_sub_vendor, pciids_sub_device) {
                     // if (flags & PCI_LOOKUP_NUMERIC)
-                    (1, _, _) =>
-                        writeln!(f, "\tSubsystem: {:04x}:{:04x}", sub_vendor_id, sub_device_id)?,
+                    (1, _, _) => writeln!(
+                        f,
+                        "\tSubsystem: {:04x}:{:04x}",
+                        sub_vendor_id, sub_device_id
+                    )?,
                     //  else if (flags & PCI_LOOKUP_MIXED)
-                    (2..=usize::MAX, Some(v), Some(d)) => 
-                        writeln!(f, "\tSubsystem: {} {} [{:04x}:{:04x}]", v, d, sub_vendor_id, sub_device_id)?,
-                    (2..=usize::MAX, None, _) =>
-                        writeln!(f, "\tSubsystem: Device [{:04x}:{:04x}]", sub_vendor_id, sub_device_id)?,
-                    (2..=usize::MAX, Some(v), _) =>
-                        writeln!(f, "\tSubsystem: {} Device [{:04x}:{:04x}]", v, sub_vendor_id, sub_device_id)?,
+                    (2..=usize::MAX, Some(v), Some(d)) => writeln!(
+                        f,
+                        "\tSubsystem: {} {} [{:04x}:{:04x}]",
+                        v, d, sub_vendor_id, sub_device_id
+                    )?,
+                    (2..=usize::MAX, None, _) => writeln!(
+                        f,
+                        "\tSubsystem: Device [{:04x}:{:04x}]",
+                        sub_vendor_id, sub_device_id
+                    )?,
+                    (2..=usize::MAX, Some(v), _) => writeln!(
+                        f,
+                        "\tSubsystem: {} Device [{:04x}:{:04x}]",
+                        v, sub_vendor_id, sub_device_id
+                    )?,
                     // else
-                    (_, Some(v), Some(d)) =>
-                        writeln!(f, "\tSubsystem: {} {}", v, d)?,
-                    (_, None, _) =>
-                        writeln!(f, "\tSubsystem: Device {:04x}", sub_device_id)?,
+                    (_, Some(v), Some(d)) => writeln!(f, "\tSubsystem: {} {}", v, d)?,
+                    (_, None, _) => writeln!(f, "\tSubsystem: Device {:04x}", sub_device_id)?,
                     (_, Some(v), None) =>
-                        //  In libpci string offset with `device_id + 5`!
-                        writeln!(f, "\tSubsystem: {} Device {:04x}", v, sub_device_id)?,
+                    //  In libpci string offset with `device_id + 5`!
+                    {
+                        writeln!(f, "\tSubsystem: {} Device {:04x}", v, sub_device_id)?
+                    }
                 }
             };
         }
         Ok(())
     }
     fn fmt_verbose(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let LspciView { basic_view: view, .. } = self.view;
+        let LspciView {
+            basic_view: view, ..
+        } = self.view;
         let Device {
-            header: device::Header {
-                command,
-                status,
-                cache_line_size,
-                latency_timer,
-                header_type,
-                bist,
-                interrupt_pin,
-                class_code,
-                ..
-            },
+            header:
+                device::Header {
+                    command,
+                    status,
+                    cache_line_size,
+                    latency_timer,
+                    header_type,
+                    bist,
+                    interrupt_pin,
+                    class_code,
+                    ..
+                },
             phy_slot,
             numa_node,
             iommu_group,
@@ -240,28 +260,40 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         let (min_gnt, max_lat) = {
             let ClassCode { base, sub, .. } = *class_code;
             match header_type {
-                HeaderType::Normal(header::Normal { min_grant, max_latency, .. }) => {
+                HeaderType::Normal(header::Normal {
+                    min_grant,
+                    max_latency,
+                    ..
+                }) => {
                     if base == 0x06 && sub == 0x04 {
                         writeln!(f, "\t!!! Invalid class 0604 for header type 00")?;
                     }
                     (*min_grant as usize * 250, *max_latency as usize * 250)
-                },
+                }
                 HeaderType::Bridge(_) => {
                     if base != 0x06 {
-                        writeln!(f, "\t!!! Invalid class {:02x}{:02x} for header type 01", base, sub)?;
+                        writeln!(
+                            f,
+                            "\t!!! Invalid class {:02x}{:02x} for header type 01",
+                            base, sub
+                        )?;
                     }
                     (0, 0)
-                },
+                }
                 HeaderType::Cardbus(_) => {
                     if base != 0x06 {
-                        writeln!(f, "\t!!! Invalid class {:02x}{:02x} for header type 02", base, sub)?;
+                        writeln!(
+                            f,
+                            "\t!!! Invalid class {:02x}{:02x} for header type 02",
+                            base, sub
+                        )?;
                     }
                     (0, 0)
-                },
+                }
                 HeaderType::Reserved(htype) => {
                     writeln!(f, "\t!!! Unknown header type {:02x}", htype)?;
                     return Ok(());
-                },
+                }
             }
         };
 
@@ -269,7 +301,9 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
 
         let irq = self.data.irq();
         if view.verbose > 1 {
-            write!(f, "\tControl: {}\n\tStatus: {}\n",
+            write!(
+                f,
+                "\tControl: {}\n\tStatus: {}\n",
                 command.display(()),
                 status.display(()),
             )?;
@@ -282,27 +316,28 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
                     (min, max) => write!(f, " ({}ns min, {}ns max)", min, max),
                 }?;
                 if cache_line_size != &0 {
-                    write!(f, ", Cache Line Size: {} bytes", (*cache_line_size as usize) * 4)?;
+                    write!(
+                        f,
+                        ", Cache Line Size: {} bytes",
+                        (*cache_line_size as usize) * 4
+                    )?;
                 }
                 writeln!(f)?;
             }
             match interrupt_pin {
-                InterruptPin::Unused if irq != 0 =>
-                    writeln!(f, "\tInterrupt: pin ? routed to IRQ {}", irq)?,
-                InterruptPin::IntA =>
-                    writeln!(f, "\tInterrupt: pin A routed to IRQ {}", irq)?,
-                InterruptPin::IntB =>
-                    writeln!(f, "\tInterrupt: pin B routed to IRQ {}", irq)?,
-                InterruptPin::IntC =>
-                    writeln!(f, "\tInterrupt: pin C routed to IRQ {}", irq)?,
-                InterruptPin::IntD =>
-                    writeln!(f, "\tInterrupt: pin D routed to IRQ {}", irq)?,
+                InterruptPin::Unused if irq != 0 => {
+                    writeln!(f, "\tInterrupt: pin ? routed to IRQ {}", irq)?
+                }
+                InterruptPin::IntA => writeln!(f, "\tInterrupt: pin A routed to IRQ {}", irq)?,
+                InterruptPin::IntB => writeln!(f, "\tInterrupt: pin B routed to IRQ {}", irq)?,
+                InterruptPin::IntC => writeln!(f, "\tInterrupt: pin C routed to IRQ {}", irq)?,
+                InterruptPin::IntD => writeln!(f, "\tInterrupt: pin D routed to IRQ {}", irq)?,
                 InterruptPin::Reserved(v) => {
                     let u8_as_char = (('A' as u32) + (*v as u32) - 1) & 0xff;
                     if let Some(pin) = char::from_u32(u8_as_char) {
                         writeln!(f, "\tInterrupt: pin {} routed to IRQ {}", pin, irq)?;
                     };
-                },
+                }
                 _ => (),
             };
             if let Some(numa_node) = numa_node {
@@ -312,13 +347,21 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
                 writeln!(f, "\tIOMMU group: {}", iommu_group)?;
             }
         } else {
-            write!(f, "\tFlags: {}{}{}{}{}{}{} devsel",
+            write!(
+                f,
+                "\tFlags: {}{}{}{}{}{}{} devsel",
                 command.bus_master.display(BoolView::Str("bus master, ")),
-                command.vga_palette_snoop.display(BoolView::Str("VGA palette snoop, ")),
+                command
+                    .vga_palette_snoop
+                    .display(BoolView::Str("VGA palette snoop, ")),
                 command.stepping.display(BoolView::Str("stepping, ")),
-                command.fast_back_to_back_enable.display(BoolView::Str("fast Back2Back, ")),
+                command
+                    .fast_back_to_back_enable
+                    .display(BoolView::Str("fast Back2Back, ")),
                 status.is_66mhz_capable.display(BoolView::Str("66MHz, ")),
-                status.user_definable_features.display(BoolView::Str("user-definable features, ")),
+                status
+                    .user_definable_features
+                    .display(BoolView::Str("user-definable features, ")),
                 status.devsel_timing.display(()),
             )?;
             if command.bus_master {
@@ -327,7 +370,7 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             if irq != 0 {
                 #[cfg(target_arch = "sparc64")]
                 write!(f, ", IRQ {:08x}", irq)?;
-                #[cfg(not (target_arch = "sparc64"))]
+                #[cfg(not(target_arch = "sparc64"))]
                 write!(f, ", IRQ {}", irq)?;
             }
             if let Some(numa_node) = numa_node {
@@ -350,7 +393,7 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             device::HeaderType::Normal(_) => self.fmt_header_normal(f),
             device::HeaderType::Bridge(bridge) => self.fmt_header_bridge(f, bridge),
             device::HeaderType::Cardbus(cardbus) => self.fmt_header_cardbus(f, cardbus),
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
     // ref to show_htype0(struct device *d);
@@ -360,7 +403,11 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         self.fmt_capabilities(f)
     }
     // ref to show_htype1(struct device *d);
-    fn fmt_header_bridge(&self, f: &mut fmt::Formatter<'_>, bridge: &header::Bridge) -> fmt::Result {
+    fn fmt_header_bridge(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        bridge: &header::Bridge,
+    ) -> fmt::Result {
         let verbose = self.view.basic_view.verbose as u64;
         let header::Bridge {
             primary_bus_number,
@@ -374,10 +421,15 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             secondary_status,
             bridge_control,
             ..
-        }  = bridge;
+        } = bridge;
         self.fmt_bases(f)?;
-        writeln!(f, "\tBus: primary={:02x}, secondary={:02x}, subordinate={:02x}, sec-latency={}",
-            primary_bus_number, secondary_bus_number, subordinate_bus_number, secondary_latency_timer
+        writeln!(
+            f,
+            "\tBus: primary={:02x}, secondary={:02x}, subordinate={:02x}, sec-latency={}",
+            primary_bus_number,
+            secondary_bus_number,
+            subordinate_bus_number,
+            secondary_latency_timer
         )?;
 
         // write!(f, "{:?} ", io_address_range)?;
@@ -390,28 +442,34 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             BridgeIoAddressRange::IoAddr16 { base, limit } => {
                 write!(f, "\tI/O behind bridge:")?;
                 fmt_range(f, *base as u64, *limit as u64 + 0xfff, false, verbose)?
-            },
+            }
             BridgeIoAddressRange::IoAddr32 { base, limit } => {
                 write!(f, "\tI/O behind bridge:")?;
                 fmt_range(f, *base as u64, *limit as u64 + 0xfff, false, verbose)?
-            },
-            BridgeIoAddressRange::Malformed { base, limit } =>
-                writeln!(f, "\t!!! Unknown I/O range types {:x}/{:x}", base, limit)?,
-            BridgeIoAddressRange::Reserved { base, limit } =>
-                writeln!(f, "\t!!! Unknown I/O range types {:x}/{:x}", base, limit)?,
+            }
+            BridgeIoAddressRange::Malformed { base, limit } => {
+                writeln!(f, "\t!!! Unknown I/O range types {:x}/{:x}", base, limit)?
+            }
+            BridgeIoAddressRange::Reserved { base, limit } => {
+                writeln!(f, "\t!!! Unknown I/O range types {:x}/{:x}", base, limit)?
+            }
         }
 
         // The bottom four bits of both the Memory Base and Memory Limit registers are read-only
         // and return zeros when read.
         if (memory_base & 0xf) != 0 || (memory_limit & 0xf) != 0 {
-            writeln!(f, "\t!!! Unknown memory range types {:x}/{:x}", memory_base, memory_limit)?;
+            writeln!(
+                f,
+                "\t!!! Unknown memory range types {:x}/{:x}",
+                memory_base, memory_limit
+            )?;
         } else {
             let memory_base = ((memory_base & !0xf) as u64) << 16;
             let memory_limit = ((memory_limit & !0xf) as u64) << 16;
             write!(f, "\tMemory behind bridge:")?;
             fmt_range(f, memory_base, memory_limit + 0xfffff, false, verbose)?;
         }
-        
+
         // TODO: Prefetchable Memory Base and Prefetchable Memory Limit values from
         // /sys/bus/pci/devices/*/resource
         match prefetchable_memory {
@@ -422,49 +480,74 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             BridgePrefetchableMemory::MemAddr32 { base, limit } => {
                 write!(f, "\tPrefetchable memory behind bridge:")?;
                 fmt_range(f, *base as u64, *limit as u64 + 0xfffff, false, verbose)?
-            },
+            }
             BridgePrefetchableMemory::MemAddr64 { base, limit } => {
                 write!(f, "\tPrefetchable memory behind bridge:")?;
                 fmt_range(f, *base, *limit + 0xfffff, true, verbose)?
-            },
-            BridgePrefetchableMemory::Malformed { base, limit } =>
-                writeln!(f, "\t!!! Unknown prefetchable memory range types {:x}/{:x}", base, limit)?,
-            BridgePrefetchableMemory::Reserved { base, limit } =>
-                writeln!(f, "\t!!! Unknown prefetchable memory range types {:x}/{:x}", base, limit)?,
+            }
+            BridgePrefetchableMemory::Malformed { base, limit } => writeln!(
+                f,
+                "\t!!! Unknown prefetchable memory range types {:x}/{:x}",
+                base, limit
+            )?,
+            BridgePrefetchableMemory::Reserved { base, limit } => writeln!(
+                f,
+                "\t!!! Unknown prefetchable memory range types {:x}/{:x}",
+                base, limit
+            )?,
         }
         if verbose > 1 {
             writeln!(f, "\tSecondary status: {}", secondary_status.display(()))?;
         }
         self.fmt_rom(f)?;
         if verbose > 1 {
-            writeln!(f,
+            writeln!(
+                f,
                 "\tBridgeCtl: Parity{} SERR{} NoISA{} VGA{} VGA16{} MAbort{} >Reset{} FastB2B{}",
-                bridge_control.parity_error_response_enable.display(BoolView::PlusMinus),
+                bridge_control
+                    .parity_error_response_enable
+                    .display(BoolView::PlusMinus),
                 bridge_control.serr_enable.display(BoolView::PlusMinus),
                 bridge_control.isa_enable.display(BoolView::PlusMinus),
                 bridge_control.vga_enable.display(BoolView::PlusMinus),
                 bridge_control.vga_16_enable.display(BoolView::PlusMinus),
-                bridge_control.master_abort_mode.display(BoolView::PlusMinus),
-                bridge_control.secondary_bus_reset.display(BoolView::PlusMinus),
-                bridge_control.fast_back_to_back_enable.display(BoolView::PlusMinus),
+                bridge_control
+                    .master_abort_mode
+                    .display(BoolView::PlusMinus),
+                bridge_control
+                    .secondary_bus_reset
+                    .display(BoolView::PlusMinus),
+                bridge_control
+                    .fast_back_to_back_enable
+                    .display(BoolView::PlusMinus),
             )?;
-            writeln!(f,
+            writeln!(
+                f,
                 "\t\tPriDiscTmr{} SecDiscTmr{} DiscTmrStat{} DiscTmrSERREn{}",
-                bridge_control.primary_discard_timer.display(BoolView::PlusMinus),
-                bridge_control.secondary_discard_timer.display(BoolView::PlusMinus),
-                bridge_control.discard_timer_status.display(BoolView::PlusMinus),
-                bridge_control.discard_timer_serr_enable.display(BoolView::PlusMinus),
+                bridge_control
+                    .primary_discard_timer
+                    .display(BoolView::PlusMinus),
+                bridge_control
+                    .secondary_discard_timer
+                    .display(BoolView::PlusMinus),
+                bridge_control
+                    .discard_timer_status
+                    .display(BoolView::PlusMinus),
+                bridge_control
+                    .discard_timer_serr_enable
+                    .display(BoolView::PlusMinus),
             )?;
         }
         self.fmt_capabilities(f)
     }
     // ref to show_htype2(struct device *d);
-    fn fmt_header_cardbus(&self, f: &mut fmt::Formatter<'_>, cardbus: &header::Cardbus) -> fmt::Result {
+    fn fmt_header_cardbus(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        cardbus: &header::Cardbus,
+    ) -> fmt::Result {
         let verbose = self.view.basic_view.verbose as u64;
-        let device::Header {
-            command,
-            ..
-        } = &self.data.header;
+        let device::Header { command, .. } = &self.data.header;
         let header::Cardbus {
             secondary_status,
             pci_bus_number,
@@ -481,17 +564,27 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             legacy_mode_base_address,
             reserved,
             ..
-        }  = cardbus;
+        } = cardbus;
         self.fmt_bases(f)?;
-        writeln!(f, "\tBus: primary={:02x}, secondary={:02x}, subordinate={:02x}, sec-latency={}",
+        writeln!(
+            f,
+            "\tBus: primary={:02x}, secondary={:02x}, subordinate={:02x}, sec-latency={}",
             pci_bus_number, cardbus_bus_number, subordinate_bus_number, cardbus_latency_timer
         )?;
-        
+
         let mut fmt_mem_window = |n: usize, base: u32, limit: u32, pf: bool| -> fmt::Result {
             if base <= limit || verbose > 0 {
-                writeln!(f, "\tMemory window {}: {:08x}-{:08x}{}{}",
-                    n, base, limit.wrapping_add(0xfff),
-                    if command.memory_space { "" } else { " [disabled]" },
+                writeln!(
+                    f,
+                    "\tMemory window {}: {:08x}-{:08x}{}{}",
+                    n,
+                    base,
+                    limit.wrapping_add(0xfff),
+                    if command.memory_space {
+                        ""
+                    } else {
+                        " [disabled]"
+                    },
                     if pf { " (prefetchable)" } else { "" },
                 )
             } else {
@@ -499,36 +592,48 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             }
         };
         fmt_mem_window(
-            0, *memory_base_address_0, *memory_limit_address_0, bctl.memory_0_prefetch_enable
+            0,
+            *memory_base_address_0,
+            *memory_limit_address_0,
+            bctl.memory_0_prefetch_enable,
         )?;
         fmt_mem_window(
-            1, *memory_base_address_1, *memory_limit_address_1, bctl.memory_1_prefetch_enable
+            1,
+            *memory_base_address_1,
+            *memory_limit_address_1,
+            bctl.memory_1_prefetch_enable,
         )?;
 
         let mut fmt_io_window = |n: usize, range: &IoAccessAddressRange| -> fmt::Result {
             let (base, limit) = match range {
                 IoAccessAddressRange::Addr16Bit { base, limit } => {
-                    (*base as u32, *limit as u32 + 3) 
-                },
-                IoAccessAddressRange::Addr32Bit { base, limit } => {
-                    (*base, *limit + 3) 
-                },
+                    (*base as u32, *limit as u32 + 3)
+                }
+                IoAccessAddressRange::Addr32Bit { base, limit } => (*base, *limit + 3),
                 IoAccessAddressRange::Unknown {
-                    io_address_capability, base_lower, base_upper, limit_lower, limit_upper
+                    io_address_capability,
+                    base_lower,
+                    base_upper,
+                    limit_lower,
+                    limit_upper,
                 } => {
                     // lspci only check first bit of io_address_capability
                     if io_address_capability & 0b1 == 0 {
-                        (*base_lower as u32, *limit_lower as u32 + 3) 
+                        (*base_lower as u32, *limit_lower as u32 + 3)
                     } else {
                         let base = ((*base_upper as u32) << 16) | (*base_lower as u32);
                         let limit = ((*limit_upper as u32) << 16) | (*limit_lower as u32);
-                        (base, limit + 3) 
+                        (base, limit + 3)
                     }
-                },
+                }
             };
             if base <= limit || verbose > 0 {
-                writeln!(f, "\tI/O window {}: {:08x}-{:08x}{}",
-                    n, base, limit,
+                writeln!(
+                    f,
+                    "\tI/O window {}: {:08x}-{:08x}{}",
+                    n,
+                    base,
+                    limit,
                     if command.io_space { "" } else { " [disabled]" },
                 )
             } else {
@@ -543,9 +648,11 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         }
 
         if verbose > 1 {
-            writeln!(f,
+            writeln!(
+                f,
                 "\tBridgeCtl: Parity{} SERR{} ISA{} VGA{} MAbort{} >Reset{} 16bInt{} PostWrite{}",
-                bctl.parity_error_response_enable.display(BoolView::PlusMinus),
+                bctl.parity_error_response_enable
+                    .display(BoolView::PlusMinus),
                 bctl.serr_enable.display(BoolView::PlusMinus),
                 bctl.isa_enable.display(BoolView::PlusMinus),
                 bctl.vga_enable.display(BoolView::PlusMinus),
@@ -578,8 +685,7 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         } = device.header.command;
         let mut bars = match device.header.header_type {
             HeaderType::Normal(Normal {
-                ref base_addresses,
-                ..
+                ref base_addresses, ..
             }) => base_addresses.0.iter(),
             HeaderType::Bridge(Bridge {
                 ref base_addresses, ..
@@ -588,7 +694,8 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
                 ref base_addresses, ..
             }) => base_addresses.0.iter(),
             _ => todo!(),
-        }.enumerate();
+        }
+        .enumerate();
 
         const PCI_ADDR_MEM_MASK: u64 = !0xf;
         // const PCI_BASE_ADDRESS_SPACE: u32 = 0x01; /* 0 = memory, 1 = I/O */
@@ -642,7 +749,10 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
                         // TODO: Complicated base_addr[i] values. Just set from conf space
                         pos |= (hw_upper as u64) << 32;
                     } else {
-                        eprintln!("pcilib: {}: Invalid 64-bit address seen for BAR {}.", device.address, n);
+                        eprintln!(
+                            "pcilib: {}: Invalid 64-bit address seen for BAR {}.",
+                            device.address, n
+                        );
                         broken = true;
                     }
                 }
@@ -650,7 +760,11 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
             };
 
             // Detect virtual regions, which are reported by the OS, but unassigned in the device
-            if pos != 0 && hw_lower == 0 && hw_upper == 0 && (ioflg & PCI_IORESOURCE_PCI_EA_BEI) == 0 {
+            if pos != 0
+                && hw_lower == 0
+                && hw_upper == 0
+                && (ioflg & PCI_IORESOURCE_PCI_EA_BEI) == 0
+            {
                 flg = pos as u32;
                 virt = true;
             }
@@ -713,8 +827,6 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
         }
         Ok(())
     }
-
-
 
     // fn fmt_machine(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     //     write!(f, "TODO: fmt_machine")
@@ -793,20 +905,20 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
     fn fmt_capabilities(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let device = self.data;
         let LspciView {
-            basic_view: view,
+            basic_view,
             vendor_device_subsystem: vds,
             ..
         } = self.view;
         if !device.header.status.capabilities_list {
             return Ok(());
         }
-        let mut maybe_pci_express = None;
         let caps_view = CapsView {
-            view: &view,
+            view: basic_view,
             device,
             vds,
         };
-        if let Some(caps) = device.capabilities() {
+        let maybe_pci_express = if let Some(caps) = device.capabilities() {
+            let mut maybe_pci_express = None;
             for cap in caps {
                 match cap {
                     Ok(cap) => {
@@ -818,20 +930,36 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
                     Err(err) => write!(f, "{}", err.display(()))?,
                 }
             }
+            maybe_pci_express
         } else {
             writeln!(f, "\tCapabilities: <access denied>")?;
+            None
         };
-        let ecaps_view = EcapsView {
-            view: &view,
-            device,
-            maybe_pci_express: maybe_pci_express.as_ref(),
-        };
+        let maybe_pci_express = maybe_pci_express.as_ref();
         if let Some(ecaps) = device.extended_capabilities() {
-            for ecap in ecaps {
+            for ref ecap in ecaps {
                 match ecap {
-                    Ok(ecap) => write!(f, "{}", ecap.display(&ecaps_view))?,
-                    Err(ecap_err) => write!(f, "{}", View((&ecap_err, &ecaps_view)))?,
-                }
+                    Ok(data) => write!(
+                        f,
+                        "{}",
+                        ecaps::View {
+                            basic_view,
+                            device,
+                            maybe_pci_express,
+                            data,
+                        }
+                    ),
+                    Err(data) => write!(
+                        f,
+                        "{}",
+                        ecaps::View {
+                            basic_view,
+                            device,
+                            maybe_pci_express,
+                            data,
+                        }
+                    ),
+                }?;
             }
         }
         Ok(())
@@ -839,7 +967,7 @@ impl<'a> MultiView<&'a Device, &'a LspciView> {
 }
 
 fn fmt_size(f: &mut fmt::Formatter<'_>, x: u64) -> fmt::Result {
-    let suffix = [ "", "K", "M", "G", "T" ];
+    let suffix = ["", "K", "M", "G", "T"];
     if x == 0 {
         Ok(())
     } else {
@@ -853,7 +981,13 @@ fn fmt_size(f: &mut fmt::Formatter<'_>, x: u64) -> fmt::Result {
     }
 }
 
-fn fmt_range(f: &mut fmt::Formatter<'_>, base: u64, limit: u64, is_64bit: bool, verbose: u64) -> fmt::Result {
+fn fmt_range(
+    f: &mut fmt::Formatter<'_>,
+    base: u64,
+    limit: u64,
+    is_64bit: bool,
+    verbose: u64,
+) -> fmt::Result {
     if base <= limit || verbose > 2 {
         if is_64bit {
             write!(f, " {:016x}-{:016x}", base, limit)?;
@@ -863,21 +997,16 @@ fn fmt_range(f: &mut fmt::Formatter<'_>, base: u64, limit: u64, is_64bit: bool, 
     }
     if base <= limit {
         fmt_size(f, limit.wrapping_sub(base) + 1)?;
-    }  else {
+    } else {
         write!(f, " [disabled]")?;
     }
     writeln!(f)
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::{
-        device::{
-            Device,
-            ConfigurationSpace,
-            address::Address, ResourceEntry, Resource,
-        },
+        device::{address::Address, ConfigurationSpace, Device, Resource, ResourceEntry},
         pciids::PciIds,
     };
     // use pcics::header::bar::BaseAddresses;
@@ -886,7 +1015,7 @@ mod tests {
 
     lazy_static! {
         pub static ref VIEW: LspciView = {
-            let (vendor_device_subsystem, class_code) = 
+            let (vendor_device_subsystem, class_code) =
                 PciIds::new(include_str!("/usr/share/hwdata/pci.ids").lines())
                     .collect::<(pciids::VendorDeviceSubsystem, pciids::ClassCode)>();
             LspciView {
@@ -966,7 +1095,7 @@ mod tests {
                         pretty_assertions::assert_eq!(sample, result);
                     }
                 )*
-            };  
+            };
         }
         display_device_verbose! {
             eq_1: "8086:9dc8/out.v.txt", 1;
@@ -975,4 +1104,3 @@ mod tests {
         }
     }
 }
-

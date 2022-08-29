@@ -132,7 +132,7 @@ mod fuzzing {
     use std::{io::Write, iter};
     use tempfile::NamedTempFile;
 
-    const RANDOM_DATA: &'static [u8; 4096 * 64] = include_bytes!(concat!(
+    const RANDOM_DATA: &[u8; 4096 * 64] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/data/fuzzing/random"
     ));
@@ -186,7 +186,7 @@ mod fuzzing {
     enum Param {
         Header { htype: u8 },
         Caps { id: u8, htype: u8 },
-        Ecaps { id: u16, htype: u8 },
+        Ecaps { id: u16, htype: u8, aux: usize },
     }
 
     #[test]
@@ -227,13 +227,6 @@ mod fuzzing {
         }
     });
 
-    seq!(N in 0x00..=0x34 {
-        #[test]
-        fn extended_capability_~N() {
-            run_test(Param::Ecaps { id: N, htype: 0 });
-        }
-    });
-
     #[test]
     fn capability_10_bridge() {
         run_test(Param::Caps { id: 10, htype: 1 });
@@ -242,6 +235,19 @@ mod fuzzing {
     #[test]
     fn capability_14_bridge() {
         run_test(Param::Caps { id: 14, htype: 1 });
+    }
+
+    seq!(N in 0x00..=0x34 {
+        #[test]
+        fn extended_capability_~N() {
+            run_test(Param::Ecaps { id: N, htype: 0, aux: 0 });
+        }
+    });
+
+    // Compute Express Link
+    #[test]
+    fn extended_capability_23_cxl() {
+        run_test(Param::Ecaps { id: 0x23, htype: 0, aux: 0x1e980000 });
     }
 
     fn run_test(param: Param) {
@@ -313,7 +319,7 @@ mod fuzzing {
                 fill_common_caps(id, htype);
                 256
             }
-            Param::Ecaps { id, htype } => {
+            Param::Ecaps { id, htype, aux } => {
                 let _ = htype;
                 slice[..256].fill(0);
                 slice[0x06] = 0x10; // Has capabilities
@@ -322,6 +328,9 @@ mod fuzzing {
                 let [lo, hi] = id.to_le_bytes();
                 (slice[0x100], slice[0x101]) = (lo, hi); // Ecap ID
                 (slice[0x102], slice[0x103]) = (0, 0); // Next ecap ID
+                if aux == 0x1e980000 {
+                    slice[0x104..0x10A].copy_from_slice(&[0x98, 0x1E, 0x81, 0x03, 0x00, 0x00]);
+                }
                 4096
             }
         }

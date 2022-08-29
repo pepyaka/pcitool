@@ -6,12 +6,13 @@ use pcics::{
         multifunction_virtual_channel::MultifunctionVirtualChannelError, tph_requester::StTable,
         AccessControlServices, AddressTranslationServices, AlternativeRoutingIdInterpretation,
         ConfigurationAccessCorrelation, DeviceSerialNumber, DownstreamPortContainment,
-        ExtendedCapability, ExtendedCapabilityError, ExtendedCapabilityKind, L1PmSubstates,
-        LatencyToleranceReporting, MultifunctionVirtualChannel, PageRequestInterface,
-        PowerBudgeting, PrecisionTimeMeasurement, ProcessAddressSpaceId,
-        RootComplexEventCollectorEndpointAssociation, RootComplexInternalLinkControl,
-        RootComplexRegisterBlockHeader, SecondaryPciExpress, TphRequester,
-        VendorSpecificExtendedCapability,
+        DynamicPowerAllocation, ExtendedCapability, ExtendedCapabilityError,
+        ExtendedCapabilityKind, FrsQueuing, L1PmSubstates, LatencyToleranceReporting, LnRequester,
+        MultiRootIoVirtualization, MultifunctionVirtualChannel, PageRequestInterface,
+        PciExpressOverMphy, PowerBudgeting, PrecisionTimeMeasurement, ProcessAddressSpaceId,
+        ProtocolMultiplexing, ReadinessTimeReporting, RootComplexEventCollectorEndpointAssociation,
+        RootComplexInternalLinkControl, RootComplexRegisterBlockHeader, SecondaryPciExpress,
+        TphRequester, VendorSpecificExtendedCapability,
     },
 };
 
@@ -20,66 +21,28 @@ use crate::{
     view::{BoolView, DisplayMultiView, MultiView, Verbose},
 };
 
-use self::aer::AerView;
 use self::vc::VcView;
+use self::{aer::AerView, rebar::ResizableBarView};
 
-use super::{BasicView, View};
+use super::{BasicView, VerboseView};
 
-pub struct EcapsView<'a> {
-    pub view: &'a BasicView,
+pub(super) struct View<'a, T> {
+    pub basic_view: &'a BasicView,
     pub device: &'a Device,
     pub maybe_pci_express: Option<&'a PciExpress>,
+    pub data: T,
 }
 
-impl<'a> fmt::Display for View<(&'a ExtendedCapabilityError, &'a EcapsView<'a>)> {
+impl<'a> fmt::Display for View<'a, &'a ExtendedCapability<'a>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (
-            data,
-            EcapsView {
-                view: &BasicView { verbose, .. },
-                ..
-            },
-        ) = self.0;
-        let (offset, msg) = match data {
-            offset @ ExtendedCapabilityError::Offset => (&0, format!("{}", offset)),
-            header @ ExtendedCapabilityError::Header { offset } => (offset, format!("{}", header)),
-            header @ ExtendedCapabilityError::EmptyHeader { offset } => {
-                (offset, format!("{}", header))
-            }
-            ExtendedCapabilityError::Data { offset, source } => (offset, format!("{}", source)),
-            ExtendedCapabilityError::AdvancedErrorReporting { offset, source } => {
-                (offset, format!("{}", source))
-            }
-            ExtendedCapabilityError::RootComplexLinkDeclaration { offset, source } => {
-                (offset, format!("{}", source.display(Verbose(verbose))))
-            }
-            ExtendedCapabilityError::SingleRootIoVirtualization { offset, source } => {
-                (offset, format!("{}", source))
-            }
-            ExtendedCapabilityError::DownstreamPortContainment { offset, source } => {
-                (offset, format!("{}", source))
-            }
-            ExtendedCapabilityError::MultifunctionVirtualChannel { offset, source } => {
-                (offset, format!("{}", View(source)))
-            }
-        };
-        let ver = if verbose > 1 { " v0" } else { "" };
-        write!(f, "\tCapabilities: [{:03x}{}] {}", offset, ver, msg)
-    }
-}
-
-impl<'a> DisplayMultiView<&'a EcapsView<'a>> for ExtendedCapability<'a> {}
-impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a>> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let EcapsView {
-            view,
+        let View {
+            basic_view: &BasicView { verbose, .. },
             device,
             maybe_pci_express,
-        } = self.view;
-        let verbose = view.verbose;
-        let offset = self.data.offset;
+            data: &ExtendedCapability { offset, .. },
+        } = self;
         write!(f, "\tCapabilities: [{:03x}", offset)?;
-        if view.verbose > 1 {
+        if verbose > 1 {
             write!(f, " v{}", self.data.version)?;
         }
         write!(f, "] ")?;
@@ -115,15 +78,15 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a
             }
             // 0006h
             ExtendedCapabilityKind::RootComplexInternalLinkControl(c) => {
-                write!(f, "{}", View(c))
+                write!(f, "{}", super::View(c))
             }
             // 0007h
             ExtendedCapabilityKind::RootComplexEventCollectorEndpointAssociation(c) => {
-                write!(f, "{}", View(c))
+                write!(f, "{}", super::View(c))
             }
             // 0008h
             ExtendedCapabilityKind::MultifunctionVirtualChannel(c) => {
-                write!(f, "{}", View(c))
+                write!(f, "{}", super::View(c))
             }
             // 0009h
             ExtendedCapabilityKind::VirtualChannelMfvcPresent(c) => {
@@ -131,7 +94,7 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a
             }
             // 000Ah
             ExtendedCapabilityKind::RootComplexRegisterBlockHeader(c) => {
-                write!(f, "{}", View(c))
+                write!(f, "{}", super::View(c))
             }
             // 000Bh
             ExtendedCapabilityKind::VendorSpecificExtendedCapability(c) => {
@@ -153,9 +116,41 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a
             ExtendedCapabilityKind::SingleRootIoVirtualization(c) => {
                 write!(f, "{}", c.display(Verbose(verbose)))
             }
+            // 0011h
+            ExtendedCapabilityKind::MultiRootIoVirtualization(c) => {
+                write!(f, "{}", super::View(c))
+            }
+            // 0012h
+            ExtendedCapabilityKind::Multicast(c) => {
+                write!(
+                    f,
+                    "{}",
+                    MulticastView {
+                        data: c,
+                        verbose,
+                        maybe_device_type: maybe_pci_express.map(|pcie| &pcie.device_type)
+                    }
+                )
+            }
             // 0013h
             ExtendedCapabilityKind::PageRequestInterface(c) => {
                 write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 0015h
+            ExtendedCapabilityKind::ResizableBar(c) => {
+                write!(
+                    f,
+                    "{}",
+                    ResizableBarView {
+                        result: Ok(c),
+                        verbose,
+                        is_virtual: false,
+                    }
+                )
+            }
+            // 016h
+            ExtendedCapabilityKind::DynamicPowerAllocation(c) => {
+                write!(f, "{}", super::View(c))
             }
             // 0017h
             ExtendedCapabilityKind::TphRequester(c) => write!(f, "{}", c.display(Verbose(verbose))),
@@ -167,9 +162,17 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a
             ExtendedCapabilityKind::SecondaryPciExpress(c) => {
                 write!(f, "{}", c.display(Verbose(verbose)))
             }
+            // 01Ah
+            ExtendedCapabilityKind::ProtocolMultiplexing(c) => {
+                write!(f, "{}", super::View(c))
+            }
             // 001Bh
             ExtendedCapabilityKind::ProcessAddressSpaceId(c) => {
                 write!(f, "{}", c.display(Verbose(verbose)))
+            }
+            // 01Ch
+            ExtendedCapabilityKind::LnRequester(c) => {
+                write!(f, "{}", super::View(c))
             }
             // 001Dh
             ExtendedCapabilityKind::DownstreamPortContainment(c) => {
@@ -193,11 +196,85 @@ impl<'a> fmt::Display for MultiView<&'a ExtendedCapability<'a>, &'a EcapsView<'a
             ExtendedCapabilityKind::PrecisionTimeMeasurement(c) => {
                 write!(f, "{}", c.display(Verbose(verbose)))
             }
-            ExtendedCapabilityKind::ConfigurationAccessCorrelation(_) => {
+            // 020h
+            ExtendedCapabilityKind::PciExpressOverMphy(c) => {
+                write!(f, "{}", super::View(c))
+            }
+            // 0021h
+            ExtendedCapabilityKind::FrsQueuing(c) => {
+                write!(f, "{}", super::View(c))
+            }
+            // 0022h
+            ExtendedCapabilityKind::ReadinessTimeReporting(c) => {
+                write!(f, "{}", super::View(c))
+            }
+            // 0023h
+            ExtendedCapabilityKind::DesignatedVendorSpecificExtendedCapability(data) => {
+                write!(f, "{}", VerboseView { data, verbose })
+            }
+            ExtendedCapabilityKind::ConfigurationAccessCorrelation(_)
+            | ExtendedCapabilityKind::ReservedForAmd(_) => {
                 writeln!(f, "Extended Capability ID {:#x}", &self.data.id())
             }
             _ => writeln!(f, "TODO {:?}", &self.data.kind),
         }
+    }
+}
+
+impl<'a> fmt::Display for View<'a, &'a ExtendedCapabilityError> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let View {
+            basic_view: &BasicView { verbose, .. },
+            data,
+            ..
+        } = self;
+        let (offset, msg) = match data {
+            offset @ ExtendedCapabilityError::Offset => (&0, format!("{}", offset)),
+            header @ ExtendedCapabilityError::Header { offset } => (offset, format!("{}", header)),
+            header @ ExtendedCapabilityError::EmptyHeader { offset } => {
+                (offset, format!("{}", header))
+            }
+            ExtendedCapabilityError::Data { offset, source } => (offset, format!("{}", source)),
+            ExtendedCapabilityError::AdvancedErrorReporting { offset, source } => {
+                (offset, format!("{}", source))
+            }
+            ExtendedCapabilityError::RootComplexLinkDeclaration { offset, source } => {
+                (offset, format!("{}", source.display(Verbose(verbose))))
+            }
+            ExtendedCapabilityError::SingleRootIoVirtualization { offset, source } => {
+                (offset, format!("{}", source))
+            }
+            ExtendedCapabilityError::DownstreamPortContainment { offset, source } => {
+                (offset, format!("{}", source))
+            }
+            ExtendedCapabilityError::MultifunctionVirtualChannel { offset, source } => {
+                (offset, format!("{}", super::View(source)))
+            }
+            ExtendedCapabilityError::ResizableBar { offset, source } => (
+                offset,
+                format!(
+                    "{}",
+                    ResizableBarView {
+                        result: Err(source),
+                        verbose,
+                        is_virtual: false,
+                    }
+                ),
+            ),
+            ExtendedCapabilityError::DynamicPowerAllocation { offset, source } => {
+                (offset, format!("{}", source))
+            }
+            ExtendedCapabilityError::ProtocolMultiplexing { offset, source } => {
+                (offset, format!("{}", source))
+            }
+            // 0023h
+            ExtendedCapabilityError::DesignatedVendorSpecificExtendedCapability {
+                offset,
+                source: data,
+            } => (offset, format!("{}", VerboseView { verbose, data })),
+        };
+        let ver = if verbose > 1 { " v0" } else { "" };
+        write!(f, "\tCapabilities: [{:03x}{}] {}", offset, ver, msg)
     }
 }
 
@@ -209,7 +286,7 @@ mod aer;
 mod vc;
 
 // 0003h Device Serial Number
-impl<'a> DisplayMultiView<()> for DeviceSerialNumber {}
+impl DisplayMultiView<()> for DeviceSerialNumber {}
 impl<'a> fmt::Display for MultiView<&'a DeviceSerialNumber, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let DeviceSerialNumber {
@@ -227,7 +304,7 @@ impl<'a> fmt::Display for MultiView<&'a DeviceSerialNumber, ()> {
 }
 
 // 0004h Power Budgeting
-impl<'a> DisplayMultiView<()> for PowerBudgeting {}
+impl DisplayMultiView<()> for PowerBudgeting {}
 impl<'a> fmt::Display for MultiView<&'a PowerBudgeting, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Power Budgeting <?>")
@@ -238,33 +315,33 @@ impl<'a> fmt::Display for MultiView<&'a PowerBudgeting, ()> {
 mod rclink;
 
 // 0006h Root Complex Internal Link Control
-impl<'a> fmt::Display for View<&'a RootComplexInternalLinkControl> {
+impl<'a> fmt::Display for super::View<&'a RootComplexInternalLinkControl> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Root Complex Internal Link <?>")
     }
 }
 
 // 0007h Root Complex Event Collector Endpoint Association
-impl<'a> fmt::Display for View<&'a RootComplexEventCollectorEndpointAssociation> {
+impl<'a> fmt::Display for super::View<&'a RootComplexEventCollectorEndpointAssociation> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Root Complex Event Collector <?>")
     }
 }
 
 // 0008h Multi-Function Virtual Channel (MFVC)
-impl<'a> fmt::Display for View<&'a MultifunctionVirtualChannel<'a>> {
+impl<'a> fmt::Display for super::View<&'a MultifunctionVirtualChannel<'a>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Multi-Function Virtual Channel <?>")
     }
 }
-impl<'a> fmt::Display for View<&'a MultifunctionVirtualChannelError> {
+impl<'a> fmt::Display for super::View<&'a MultifunctionVirtualChannelError> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Multi-Function Virtual Channel <?>")
     }
 }
 
 // 000Ah Root Complex Register Block (RCRB) Header
-impl<'a> fmt::Display for View<&'a RootComplexRegisterBlockHeader> {
+impl<'a> fmt::Display for super::View<&'a RootComplexRegisterBlockHeader> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Root Complex Register Block <?>")
     }
@@ -284,7 +361,7 @@ impl<'a> fmt::Display for MultiView<&'a VendorSpecificExtendedCapability<'a>, ()
 }
 
 // 000Ch Configuration Access Correlation (CAC)
-impl<'a> fmt::Display for View<&'a ConfigurationAccessCorrelation> {
+impl<'a> fmt::Display for super::View<&'a ConfigurationAccessCorrelation> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, " <?>")
     }
@@ -328,7 +405,7 @@ impl<'a> fmt::Display for MultiView<&'a AccessControlServices<'a>, Verbose> {
 }
 
 // 000Eh Alternative Routing-ID Interpretation (ARI)
-impl<'a> DisplayMultiView<Verbose> for AlternativeRoutingIdInterpretation {}
+impl DisplayMultiView<Verbose> for AlternativeRoutingIdInterpretation {}
 impl<'a> fmt::Display for MultiView<&'a AlternativeRoutingIdInterpretation, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -361,7 +438,7 @@ impl<'a> fmt::Display for MultiView<&'a AlternativeRoutingIdInterpretation, Verb
 }
 
 // 000Fh Address Translation Services (ATS)
-impl<'a> DisplayMultiView<Verbose> for AddressTranslationServices {}
+impl DisplayMultiView<Verbose> for AddressTranslationServices {}
 impl<'a> fmt::Display for MultiView<&'a AddressTranslationServices, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -390,11 +467,19 @@ impl<'a> fmt::Display for MultiView<&'a AddressTranslationServices, Verbose> {
 // 0010h Single Root I/O Virtualization (SR-IOV)
 mod sr_iov;
 
-// 0011h Multi-Root I/O Virtualization (MR-IOV) – defined in the Multi-Root I/O Virtualization and Sharing Specification
+// 0011h Multi-Root I/O Virtualization (MR-IOV)
+impl<'a> fmt::Display for super::View<&'a MultiRootIoVirtualization> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Multi-Root I/O Virtualization <?>")
+    }
+}
+
 // 0012h Multicast
+mod multicast;
+use multicast::MulticastView;
 
 // 0013h Page Request Interface (PRI)
-impl<'a> DisplayMultiView<Verbose> for PageRequestInterface {}
+impl DisplayMultiView<Verbose> for PageRequestInterface {}
 impl<'a> fmt::Display for MultiView<&'a PageRequestInterface, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -432,7 +517,14 @@ impl<'a> fmt::Display for MultiView<&'a PageRequestInterface, Verbose> {
 
 // 0014h Reserved for AMD
 // 0015h Resizable BAR
+mod rebar;
+
 // 0016h Dynamic Power Allocation (DPA)
+impl<'a> fmt::Display for super::View<&'a DynamicPowerAllocation<'a>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Dynamic Power Allocation <?>")
+    }
+}
 
 // 0017h TPH Requester
 impl<'a> DisplayMultiView<Verbose> for TphRequester<'a> {}
@@ -469,7 +561,7 @@ impl<'a> fmt::Display for MultiView<&'a TphRequester<'a>, Verbose> {
 }
 
 // 0018h Latency Tolerance Reporting (LTR)
-impl<'a> DisplayMultiView<Verbose> for LatencyToleranceReporting {}
+impl DisplayMultiView<Verbose> for LatencyToleranceReporting {}
 impl<'a> fmt::Display for MultiView<&'a LatencyToleranceReporting, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -545,9 +637,14 @@ impl<'a> fmt::Display for MultiView<&'a SecondaryPciExpress<'a>, Verbose> {
 }
 
 // 001Ah Protocol Multiplexing (PMUX)
+impl<'a> fmt::Display for super::View<&'a ProtocolMultiplexing<'a>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Protocol Multiplexing <?>")
+    }
+}
 
 // 001Bh Process Address Space ID (PASID)
-impl<'a> DisplayMultiView<Verbose> for ProcessAddressSpaceId {}
+impl DisplayMultiView<Verbose> for ProcessAddressSpaceId {}
 impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -579,13 +676,18 @@ impl<'a> fmt::Display for MultiView<&'a ProcessAddressSpaceId, Verbose> {
 }
 
 // 001Ch LN Requester (LNR)
+impl<'a> fmt::Display for super::View<&'a LnRequester> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "LN Requester <?>")
+    }
+}
 
 struct DpcView {
     verbose: usize,
     maybe_raw_dpc_trigger_reason_extension: Option<u8>,
 }
 // 001Dh Downstream Port Containment (DPC)
-impl<'a> DisplayMultiView<DpcView> for DownstreamPortContainment {}
+impl DisplayMultiView<DpcView> for DownstreamPortContainment {}
 impl<'a> fmt::Display for MultiView<&'a DownstreamPortContainment, DpcView> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let DpcView {
@@ -636,7 +738,7 @@ impl<'a> fmt::Display for MultiView<&'a DownstreamPortContainment, DpcView> {
 }
 
 // 001Eh L1 PM Substates
-impl<'a> DisplayMultiView<Verbose> for L1PmSubstates {}
+impl DisplayMultiView<Verbose> for L1PmSubstates {}
 impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -712,7 +814,7 @@ impl<'a> fmt::Display for MultiView<&'a L1PmSubstates, Verbose> {
 }
 
 // 001Fh Precision Time Measurement (PTM)
-impl<'a> DisplayMultiView<Verbose> for PrecisionTimeMeasurement {}
+impl DisplayMultiView<Verbose> for PrecisionTimeMeasurement {}
 impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verbose = self.view.0;
@@ -753,9 +855,29 @@ impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
 }
 
 // 0020h PCI Express over M-PHY (M-PCIe)
+impl<'a> fmt::Display for super::View<&'a PciExpressOverMphy> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "PCI Express over M_PHY <?>")
+    }
+}
+
 // 0021h FRS Queueing
+impl<'a> fmt::Display for super::View<&'a FrsQueuing> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "FRS Queueing <?>")
+    }
+}
+
 // 0022h Readiness Time Reporting
+impl<'a> fmt::Display for super::View<&'a ReadinessTimeReporting> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Readiness Time Reporting <?>")
+    }
+}
+
 // 0023h Designated Vendor-Specific Extended Capability
+mod dvsec;
+
 // 0024h VF Resizable BAR
 // 0025h Data Link Feature
 // 0026h Physical Layer 16.0 GT/s
@@ -765,3 +887,11 @@ impl<'a> fmt::Display for MultiView<&'a PrecisionTimeMeasurement, Verbose> {
 // 002Ah Physical Layer 32.0 GT/s
 // 002Bh Alternate Protocol
 // 002Ch System Firmware Intermediary (SFI)
+// 002Dh Shadow Functions
+// 002Eh Data Object Exchange
+// 002Fh Device 3
+// 0030h Integrity and Data Encryption (IDE)
+// 0031h Physical Layer 64.0 GT/s Capability
+// 0032h Flit Logging
+// 0033h Flit Performance Measurement
+// 0034h Flit Error Injection

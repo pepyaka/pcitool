@@ -92,8 +92,8 @@ impl<'a> fmt::Display for MultiView<&'a AdvancedErrorReporting, AerView> {
             ue_svrt.unsupported_request_error_status.display(BoolView::PlusMinus),
             ue_svrt.acs_violation_status.display(BoolView::PlusMinus),
         )?;
-        write!(f,
-            "\t\tCESta:\tRxErr{} BadTLP{} BadDLLP{} Rollover{} Timeout{} AdvNonFatalErr{}\n",
+        writeln!(f,
+            "\t\tCESta:\tRxErr{} BadTLP{} BadDLLP{} Rollover{} Timeout{} AdvNonFatalErr{}",
             ce_st.receiver_error_status.display(BoolView::PlusMinus),
             ce_st.bad_tlp_status.display(BoolView::PlusMinus),
             ce_st.bad_dllp_status.display(BoolView::PlusMinus),
