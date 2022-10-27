@@ -4,24 +4,22 @@ version = "0.1.0"
 authors = ["mbratchikov"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-clap = { version = "3.1.8", features = ["derive"], optional = true }
+clap = { version = "3.2.20", features = ["derive"], optional = true }
 thiserror = "1.0"
-anyhow = "1.0"
-regex = "1.5"
 lazy_static = "1.4.0"
-modular-bitfield = "0.11.2"
 displaydoc = "0.2.2"
-byte = "0.2.6"
-heterob = "0.2.0"
-kmod = { version = "0.4.0", optional = true }
-pcics = { path = "../pcics" }
-# pcics = "0.1"
+heterob = "0.3.0"
+# pcics = { path = "../pcics" }
+pcics = "0.3.1"
+walkdir = "2.3.2"
+glob = "0.3.0"
+uname = "0.1.1"
+cfg-if = "1.0.0"
+libc = "0.2.134"
 
 [dev-dependencies]
-pretty_assertions = "0.7"
+pretty_assertions = "1.3.0"
 regex = "1.5"
 tempfile = "3.3"
 rand = "0.8"
@@ -32,23 +30,66 @@ paste = "1.0.7"
 [build-dependencies]
 cc = "1.0"
 
+
+[[bin]]
+name = "pci"
+required-features = ["clap"]
+
+
 [features]
 sudo = []
+
+# Integration CPU and memory expensive tests
+expensive_tests = []
+
+# Features (bugs) for pciutils version version 3.7.0
 pciutils_3_7 = [
   "ls_ecaps_rclink_eltype",
   "ls_ecaps_rclink_cfgspace",
   "ls_caps_agp_isoch_support",
+  "ls_caps_pm_bridge",
+  "lib_proc_baseaddr_parse",
 ]
 ls_ecaps_rclink_eltype = []
 ls_ecaps_rclink_cfgspace = []
 ls_caps_agp_isoch_support = []
-expensive_tests = []
+# https://github.com/pciutils/pciutils/pull/94
+ls_caps_pm_bridge = []
 
-[[bin]]
-name = "pci"
-required-features = ["clap", "kmod"]
+# /proc/bus/pci/devices parser takes only 8 chars (#define PCIADDR_T_FMT "%08" PCI_U64_FMT_X)
+# https://github.com/pciutils/pciutils/blob/0478e1f3928bfaa34eb910ba2cbaf1dda8f84aab/lib/types.h#L58
+# Although it 16 chars in linux kernel
+# https://github.com/torvalds/linux/blob/c3e0e1e23c70455916ff3472072437b3605c6cfe/drivers/pci/proc.c#L385
+lib_proc_baseaddr_parse = []
+
+# pciutils compile options (ZLIB=, DNS=, LIBKMOD=, HWDB=)
+pciutils_make_opt_zlib = []
+pciutils_make_opt_dns = []
+pciutils_make_opt_libkmod = []
+pciutils_make_opt_hwdb = []
+
+
+# Examples
+[[example]]
+name = "brief"
+
+[[example]]
+name = "device"
+
+[[example]]
+name = "dump"
+
+
+# Tests
+[[test]]
+name = "dump"
+required-features = ["clap"]
 
 [[test]]
-name = "user_dump"
-path = "tests/user_dump.rs"
+name = "linux_procfs"
 required-features = ["clap"]
+
+[[test]]
+name = "linux_sysfs"
+required-features = ["clap"]
+

@@ -4,6 +4,9 @@
 
 use core::cmp::Ordering;
 use std::array::TryFromSliceError;
+use std::num::ParseIntError;
+use std::slice::SliceIndex;
+use std::str::FromStr;
 
 use displaydoc::Display;
 use heterob::Seq;
@@ -11,8 +14,8 @@ use heterob::Seq;
 pub mod address;
 pub use address::Address;
 
-use pcics::header::BaseAddressType;
 pub use pcics::header::{self, Header, HeaderType};
+use pcics::header::{BaseAddress, BaseAddressType, Bridge, Cardbus, Normal};
 // pub mod header;
 // pub use header::{Header, HeaderType};
 
@@ -24,8 +27,6 @@ pub use pcics::extended_capabilities::{self, ExtendedCapabilities};
 // pub mod extended_capabilities;
 // pub use extended_capabilities::ExtendedCapabilities;
 
-
-
 /// Device dependent region starts at 0x40 offset
 pub const DDR_OFFSET: usize = 0x40;
 /// Extended configuration space starts at 0x100 offset
@@ -34,8 +35,7 @@ pub const ECS_OFFSET: usize = 0x100;
 const DDR_LENGTH: usize = ECS_OFFSET - DDR_OFFSET;
 const ECS_LENGTH: usize = 4096 - ECS_OFFSET;
 
-
-#[derive(Debug, Clone, PartialEq, Eq,)] 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
     pub address: Address,
     pub header: Header,
@@ -50,54 +50,75 @@ pub struct Device {
     /// IOMMU group
     pub iommu_group: Option<String>,
     /// Real IRQ
-    pub irq: Option<u8>,
+    pub irq: Option<usize>,
     pub resource: Option<Resource>,
+    /// Device handling kernel driver
+    pub driver_in_use: Option<String>,
+    /// Device handling capable kernel modules
+    pub kernel_modules: Option<Vec<String>>,
 }
+
 impl Device {
     pub fn new(address: Address, cs: ConfigurationSpace) -> Self {
-        Self { 
-            address, 
-            header: cs.header, 
+        Self {
+            address,
+            header: cs.header,
             device_dependent_region: cs.device_dependent_region,
             extended_configuration_space: cs.extended_configuration_space,
-            label: None, 
-            phy_slot: None, 
-            numa_node: None, 
+            label: None,
+            phy_slot: None,
+            numa_node: None,
             iommu_group: None,
             irq: None,
             resource: None,
+            driver_in_use: None,
+            kernel_modules: None,
         }
     }
     pub fn capabilities(&self) -> Option<Capabilities> {
-        let ddr = self.device_dependent_region.as_ref();
-        ddr.filter(|_| self.header.capabilities_pointer > 0)
-            .map(|ddr| Capabilities::new(&ddr.0, &self.header))
+        let Device {
+            device_dependent_region,
+            header,
+            ..
+        } = self;
+        device_dependent_region
+            .as_ref()
+            .map(|DeviceDependentRegion(ddr)| Capabilities::new(ddr, header))
     }
     pub fn extended_capabilities(&self) -> Option<ExtendedCapabilities> {
-        self.extended_configuration_space.as_ref()
+        self.extended_configuration_space
+            .as_ref()
             .map(|ecs| ExtendedCapabilities::new(&ecs.0))
     }
-    pub fn irq(&self) -> u8 {
-        if let Some(irq) = self.irq {
-            irq
-        } else {
-            self.header.interrupt_line
-        }
+    pub fn irq(&self) -> usize {
+        self.irq.unwrap_or(self.header.interrupt_line as usize)
     }
     pub fn has_mem_bar(&self) -> bool {
-        if let Some(mut base_addresses) = self.header.header_type.base_addresses() {
-            base_addresses.any(|ba| {
-                let is_non_zero_size = self.resource.as_ref()
-                    .and_then(|r| r.entries.get(ba.region))
-                    .filter(|e| e.size() > 0).is_some();
-                let is_non_io_space = !matches!(ba.base_address_type, BaseAddressType::IoSpace { .. });
-                is_non_zero_size && is_non_io_space
-            })
-        } else {
-            false
+        let is_mem_bar = |ba: BaseAddress| {
+            let is_non_zero_size = self
+                .resource
+                .as_ref()
+                .and_then(|r| r.entries.get(ba.region))
+                .filter(|e| e.size() > 0)
+                .is_some();
+            let is_non_io_space = !matches!(ba.base_address_type, BaseAddressType::IoSpace { .. });
+            is_non_zero_size && is_non_io_space
+        };
+        match &self.header.header_type {
+            HeaderType::Normal(Normal { base_addresses, .. }) => {
+                base_addresses.clone().any(is_mem_bar)
+            }
+            HeaderType::Bridge(Bridge { base_addresses, .. }) => {
+                base_addresses.clone().any(is_mem_bar)
+            }
+            HeaderType::Cardbus(Cardbus { base_addresses, .. }) => {
+                base_addresses.clone().any(is_mem_bar)
+            }
+            _ => false,
         }
     }
 }
+
 impl PartialOrd for Device {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.address.partial_cmp(&other.address)
@@ -109,11 +130,23 @@ impl Ord for Device {
     }
 }
 
-
 /// The device dependent region contains device specific information.
 /// The last 48 DWORDs of the PCI configuration space.
-#[derive(Debug, Clone, PartialEq, Eq,)] 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceDependentRegion(pub [u8; DDR_LENGTH]);
+
+impl DeviceDependentRegion {
+    pub const OFFSET: usize = 0x40;
+    pub const SIZE: usize =
+        ConfigurationSpace::SIZE - ExtendedConfigurationSpace::SIZE - Self::OFFSET;
+    pub fn get<I>(&self, index: I) -> Option<&<I as SliceIndex<[u8]>>::Output>
+    where
+        I: SliceIndex<[u8]>,
+    {
+        self.0.get(index)
+    }
+}
+
 impl<'a> TryFrom<&'a [u8]> for DeviceDependentRegion {
     type Error = core::array::TryFromSliceError;
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
@@ -123,8 +156,14 @@ impl<'a> TryFrom<&'a [u8]> for DeviceDependentRegion {
 
 /// PCI Express extends the Configuration Space to 4096 bytes per Function as compared to 256 bytes
 /// allowed by PCI Local Bus Specification.
-#[derive(Debug, Clone, PartialEq, Eq,)] 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtendedConfigurationSpace(pub [u8; ECS_LENGTH]);
+
+impl ExtendedConfigurationSpace {
+    pub const OFFSET: usize = 0x100;
+    pub const SIZE: usize = ConfigurationSpace::SIZE - Self::OFFSET;
+}
+
 impl<'a> TryFrom<&'a [u8]> for ExtendedConfigurationSpace {
     type Error = core::array::TryFromSliceError;
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
@@ -132,8 +171,7 @@ impl<'a> TryFrom<&'a [u8]> for ExtendedConfigurationSpace {
     }
 }
 
-
-#[derive(Debug, Clone, PartialEq, Eq,)] 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigurationSpace {
     pub header: Header,
     pub device_dependent_region: Option<DeviceDependentRegion>,
@@ -141,21 +179,25 @@ pub struct ConfigurationSpace {
 }
 
 impl ConfigurationSpace {
+    pub const SIZE: usize = 4096;
     pub fn device(self, address: Address) -> Device {
-        Device { 
-            address, 
-            header: self.header, 
+        Device {
+            address,
+            header: self.header,
             device_dependent_region: self.device_dependent_region,
             extended_configuration_space: self.extended_configuration_space,
-            label: None, 
-            phy_slot: None, 
-            numa_node: None, 
+            label: None,
+            phy_slot: None,
+            numa_node: None,
             iommu_group: None,
             irq: None,
             resource: None,
+            driver_in_use: None,
+            kernel_modules: None,
         }
     }
 }
+
 impl TryFrom<&[u8]> for ConfigurationSpace {
     type Error = TryFromSliceError;
 
@@ -178,7 +220,7 @@ impl TryFrom<&[u8]> for ConfigurationSpace {
     }
 }
 
-#[derive(Display, Debug, Clone, PartialEq, Eq,)] 
+#[derive(Display, Debug, Clone, PartialEq, Eq)]
 pub enum ConfigurationSpaceSize {
     /// 64-bytes predefined header region
     Header = 64,
@@ -191,37 +233,72 @@ pub enum ConfigurationSpaceSize {
 impl From<usize> for ConfigurationSpaceSize {
     fn from(size: usize) -> Self {
         match size {
-            0..=63   => Self::Header,
+            0..=63 => Self::Header,
             64..=255 => Self::DeviceDependentRegion,
-            _        => Self::ExtendedConfigurationSpace,
+            _ => Self::ExtendedConfigurationSpace,
         }
     }
 }
 
 /// Sysfs `/sys/bus/pci/devices/*/resource` file support
-#[derive(Display, Debug, Clone, PartialEq, Eq,)] 
+#[derive(Display, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Resource {
     pub entries: [ResourceEntry; 6],
     pub rom_entry: ResourceEntry,
 }
 
-#[derive(Display, Debug, Clone, PartialEq, Eq,)] 
+impl FromStr for Resource {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut entries = [ResourceEntry::default(); 6];
+        let mut lines = s.lines();
+        for (re, line) in &mut entries.iter_mut().zip(&mut lines) {
+            *re = line.parse()?;
+        }
+        let rom_entry = lines.next().unwrap_or("0x0").parse()?;
+        Ok(Self { entries, rom_entry })
+    }
+}
+
+#[derive(Display, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ResourceEntry {
     pub start: u64,
     pub end: u64,
     /// PCI_IORESOURCE_* flags for regions or for expansion ROM
     pub flags: u64,
 }
+
 impl ResourceEntry {
-    pub fn size(&self) -> u64 { 
+    pub fn size(&self) -> u64 {
         if self.end > self.start {
             self.end - self.start + 1
         } else {
             0
         }
     }
-    pub fn flags(&self) -> u64 { self.flags & 0xf }
-    pub fn base_addr(&self) -> u64 { self.start | self.flags() }
+    pub fn flags(&self) -> u64 {
+        self.flags & 0xf
+    }
+    pub fn base_addr(&self) -> u64 {
+        self.start | self.flags()
+    }
+}
+
+impl FromStr for ResourceEntry {
+    type Err = ParseIntError;
+
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        let mut fields = line.split_ascii_whitespace();
+        let start = fields.next().unwrap_or_default().trim_start_matches("0x");
+        let end = fields.next().unwrap_or_default().trim_start_matches("0x");
+        let flags = fields.next().unwrap_or_default().trim_start_matches("0x");
+        Ok(Self {
+            start: u64::from_str_radix(start, 16)?,
+            end: u64::from_str_radix(end, 16)?,
+            flags: u64::from_str_radix(flags, 16)?,
+        })
+    }
 }
 
 #[cfg(test)]

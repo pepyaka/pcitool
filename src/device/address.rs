@@ -7,7 +7,7 @@ use core::{
 use thiserror::Error;
 
 
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub struct Address {
     /// DOMAIN/SEGMENT is primarily a PLATFORM level construct. Logically, DOMAIN is the most
     /// significant selector (most significant address bits selector) in the
@@ -23,14 +23,14 @@ pub struct Address {
     pub function: u8,
 }
 
-#[derive(Error, Clone, Debug, PartialEq, Eq)]
+#[derive(Error, Clone, Eq, PartialEq, Debug)]
 pub enum ParseAddressError {
     #[error("empty string")]
     Empty,
-    #[error("no dot between device and function")]
-    NoDot,
-    #[error("no colon between bus and device")]
-    NoColon,
+    #[error("missing dot between device and function")]
+    MissingDot,
+    #[error("missing colon between bus and device")]
+    MissingColon,
     #[error("domain parsing problem")]
     Domain(#[source] ParseIntError),
     #[error("bus parsing problem")]
@@ -65,7 +65,7 @@ impl FromStr for Address {
         // Domain may be absent so we will iterate from the end
         // Function
         let (s, function) = s.rsplit_once('.')
-            .ok_or(ParseAddressError::NoDot)?;
+            .ok_or(ParseAddressError::MissingDot)?;
         let function = u8::from_str_radix(function, 16)
             .map_err(ParseAddressError::Function)?;
         if function > 7 {
@@ -73,7 +73,7 @@ impl FromStr for Address {
         }
         // Device
         let (s, device) = s.rsplit_once(':')
-            .ok_or(ParseAddressError::NoColon)?;
+            .ok_or(ParseAddressError::MissingColon)?;
         let device = u8::from_str_radix(device, 16)
             .map_err(ParseAddressError::Device)?;
         if device > 31 {
@@ -96,7 +96,21 @@ impl FromStr for Address {
     }
 }
 
+// /// Multiple addresses matching helper
+// pub struct SpecifiedAddress {
+//     domain: Option<u16>,
+//     bus: u8,
+//     device: Option<u8>,
+//     function: Option<u8>,
+// }
 
+// impl FromStr for SpecifiedAddress {
+//     type Err = ParseIntError;
+
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         todo!()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -109,8 +123,8 @@ mod tests {
             (Ok(Address { domain: 0x0000, bus: 0x00, device: 0x14, function: 0x03 }), "0000:00:14.3"),
             (Ok(Address { domain: 0x0000, bus: 0x00, device: 0x14, function: 0x03 }), "00:14.3"),
             (Err(ParseAddressError::Empty), ""),
-            (Err(ParseAddressError::NoDot), "00"),
-            (Err(ParseAddressError::NoColon), "00.0"),
+            (Err(ParseAddressError::MissingDot), "00"),
+            (Err(ParseAddressError::MissingColon), "00.0"),
             (Err(ParseAddressError::Function(u8::from_str_radix("x", 16).unwrap_err())), "00:00.x"),
             (Err(ParseAddressError::Device(u8::from_str_radix("x", 16).unwrap_err())), "00:xx.0"),
             (Err(ParseAddressError::Bus(u8::from_str_radix("x", 16).unwrap_err())), "xx:00.0"),

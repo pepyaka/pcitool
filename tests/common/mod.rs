@@ -4,8 +4,15 @@
 //    path::{Path, PathBuf},
 //};
 
-use regex::Regex;
-use pretty_assertions::{assert_eq,};
+// use regex::Regex;
+use pretty_assertions::assert_str_eq;
+
+use std::ffi::OsStr;
+use std::process::Command;
+use std::process::Stdio;
+
+const PCI_BIN_PATH: &str = env!("CARGO_BIN_EXE_pci");
+pub const LSPCI_MUSL_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/bin/lspci-musl");
 
 //pub static CPU_SUBS: &[(&str, &str)] = &[
 //    (r"(Speed:) \d+ (MHz)", r"$1 0000 $2"),
@@ -44,25 +51,25 @@ pub static MEMORY_SUBS: &[(&str, &str)] = &[
 //    (r"Lithium Ion", "Lithium-ion"),
 //];
 
-pub(crate) fn substitute_values(input: &str, subs: &[(&str, &str)]) -> String {
-    let mut data = String::from(input);
-    for (pattern, val) in subs {
-        let re = Regex::new(pattern).unwrap();
-        data = re.replace_all(&data, *val).to_string();
-    }
-    data
-}
+// pub(crate) fn substitute_values(input: &str, subs: &[(&str, &str)]) -> String {
+//     let mut data = String::from(input);
+//     for (pattern, val) in subs {
+//         let re = Regex::new(pattern).unwrap();
+//         data = re.replace_all(&data, *val).to_string();
+//     }
+//     data
+// }
 
-pub(crate) fn assert_text(a: &str, b: &str) {
-    let a_lines = a.lines();
-    //let a_num = &a_lines.count();
-    let b_lines = b.lines();
-    //let b_num = &b_lines.count();
-    for (n, (a, b)) in a_lines.zip(b_lines).enumerate() {
-        assert_eq!(a, b, "Line #{} not equal", n);
-    }
-    assert_eq!(a.lines().count(), b.lines().count(), "Lines number different");
-}
+// pub(crate) fn assert_text(a: &str, b: &str) {
+//     let a_lines = a.lines();
+//     //let a_num = &a_lines.count();
+//     let b_lines = b.lines();
+//     //let b_num = &b_lines.count();
+//     for (n, (a, b)) in a_lines.zip(b_lines).enumerate() {
+//         assert_eq!(a, b, "Line #{} not equal", n);
+//     }
+//     assert_eq!(a.lines().count(), b.lines().count(), "Lines number different");
+// }
 
 //pub fn get_vfs_paths() -> Vec<PathBuf> {
 //    let base_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/vfs");
@@ -83,3 +90,36 @@ pub(crate) fn assert_text(a: &str, b: &str) {
 //        })
 //        .unwrap_or_default()
 //}
+
+pub(crate) fn compare_exe_outputs(lspci_path: impl AsRef<OsStr>, args_str: &str, test_stderr: bool) {
+    let args: Vec<&str> = args_str.split_whitespace().collect();
+    let lspci = Command::new(lspci_path)
+        .args(&args)
+        .stdin(Stdio::inherit())
+        .output()
+        .expect("failed to execute lspci");
+    let lspci_out = String::from_utf8_lossy(&lspci.stdout);
+    let lspci_err = String::from_utf8_lossy(&lspci.stderr);
+
+    let pci_ls = Command::new(PCI_BIN_PATH)
+        .arg("list")
+        .args(&args)
+        .stdin(Stdio::inherit())
+        .output()
+        .unwrap_or_else(|_| {
+            panic!(
+            "failed to execute `{} list`, probably you should build with --features=\"clap kmod\"",
+            PCI_BIN_PATH
+        )
+        });
+    let pci_ls_out = String::from_utf8_lossy(&pci_ls.stdout);
+    let pci_ls_err = String::from_utf8_lossy(&pci_ls.stderr);
+
+    dbg!(&lspci_err, &pci_ls_err);
+
+    if test_stderr {
+        assert_str_eq!(lspci_err, pci_ls_err, "STDERR");
+    }
+
+    assert_str_eq!(lspci_out, pci_ls_out, "STDOUT");
+}

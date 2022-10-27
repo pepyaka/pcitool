@@ -1,0 +1,5 @@
+7f:08.3 System peripheral: Intel Corporation Xeon E7 v3/Xeon E5 v3/Core i7 QPI Link 0 (rev 02)
+	Subsystem: Intel Corporation Xeon E7 v3/Xeon E5 v3/Core i7 QPI Link 0
+	Control: I/O- Mem- BusMaster- SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx-
+	Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
+
