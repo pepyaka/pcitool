@@ -169,7 +169,7 @@ pub struct PciIds<'a> {
 }
 
 impl<'a> PciIds<'a> {
-    pub const PATH: &str = "/usr/share/hwdata/pci.ids";
+    pub const PATH: &'static str = "/usr/share/hwdata/pci.ids";
     pub fn new(lines: str::Lines<'a>) -> Self {
         Self {
             lines,

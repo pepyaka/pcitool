@@ -10,7 +10,7 @@ pub struct VendorModel<'a> {
 }
 
 impl<'a> VendorModel<'a> {
-    pub const PATH: &str = "/lib/udev/hwdb.d/20-pci-vendor-model.hwdb";
+    pub const PATH: &'static str = "/lib/udev/hwdb.d/20-pci-vendor-model.hwdb";
     pub fn new(s: &'a str) -> Self {
         Self { lines: s.lines() }
     }
@@ -86,7 +86,7 @@ pub struct Classes<'a> {
 }
 
 impl<'a> Classes<'a> {
-    pub const PATH: &str = "/lib/udev/hwdb.d/20-pci-classes.hwdb";
+    pub const PATH: &'static str = "/lib/udev/hwdb.d/20-pci-classes.hwdb";
     pub fn new(s: &'a str) -> Self {
         Self { lines: s.lines() }
     }

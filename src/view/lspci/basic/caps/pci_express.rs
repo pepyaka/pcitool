@@ -626,28 +626,28 @@ impl fmt::Display for MultiView<&ActiveStatePowerManagement, AspmView> {
 impl DisplayMultiView<()> for EndpointL0sAcceptableLatency {}
 impl fmt::Display for MultiView<&EndpointL0sAcceptableLatency, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", LATENCY_L0S[(*self.data as usize)])
+        write!(f, "{}", LATENCY_L0S[*self.data as usize])
     }
 }
 
 impl DisplayMultiView<()> for EndpointL1AcceptableLatency {}
 impl fmt::Display for MultiView<&EndpointL1AcceptableLatency, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", LATENCY_L1[(*self.data as usize)])
+        write!(f, "{}", LATENCY_L1[*self.data as usize])
     }
 }
 
 impl DisplayMultiView<()> for L0sExitLatency {}
 impl fmt::Display for MultiView<&L0sExitLatency, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", LATENCY_L0S[(*self.data as usize)])
+        write!(f, "{}", LATENCY_L0S[*self.data as usize])
     }
 }
 
 impl DisplayMultiView<()> for L1ExitLatency {}
 impl fmt::Display for MultiView<&L1ExitLatency, ()> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", LATENCY_L1[(*self.data as usize)])
+        write!(f, "{}", LATENCY_L1[*self.data as usize])
     }
 }
 
