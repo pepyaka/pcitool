@@ -4,16 +4,11 @@ use pcics::{
     capabilities::CapabilityKind,
     header::{
         self, Bridge, BridgeIoAddressRange, BridgePrefetchableMemory, Cardbus, ClassCode, Command,
-        HeaderType, InterruptPin, IoAccessAddressRange, Normal,
+        Header, HeaderType, InterruptPin, IoAccessAddressRange, Normal,
     },
-    Header,
 };
 
-use crate::{
-    access::Access,
-    device::{self, Device},
-    names,
-};
+use crate::{access::Access, device::Device, names};
 
 mod caps;
 mod ecaps;
@@ -48,7 +43,7 @@ struct Verbose<T> {
 /// Simple view wrapper
 struct Simple<T>(pub T);
 
-/// Wrapper around any type for adding [Display] trait
+/// Wrapper around any type for adding [fmt::Display] trait
 pub struct View<T, V> {
     pub data: T,
     pub args: V,
@@ -92,7 +87,7 @@ impl<'a> View<Device, &'a ViewArgs<'a>> {
             ref address,
             ref label,
             header:
-                device::Header {
+                Header {
                     ref header_type,
                     vendor_id,
                     device_id,
@@ -187,7 +182,12 @@ impl<'a> View<Device, &'a ViewArgs<'a>> {
                     }
                 });
             if let Some(x) = prg_if_name {
-                write!(f, " (prog-if {:02x} [{}])", class_code.interface, x.trim_start())?;
+                write!(
+                    f,
+                    " (prog-if {:02x} [{}])",
+                    class_code.interface,
+                    x.trim_start()
+                )?;
             } else if class_code.interface > 0 {
                 write!(f, " (prog-if {:02x})", class_code.interface)?;
             }
@@ -243,7 +243,7 @@ impl<'a> View<Device, &'a ViewArgs<'a>> {
     fn fmt_verbose(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ref device @ Device {
             header:
-                device::Header {
+                Header {
                     ref command,
                     ref status,
                     cache_line_size,
@@ -390,9 +390,9 @@ impl<'a> View<Device, &'a ViewArgs<'a>> {
             }
         }
         match header_type {
-            device::HeaderType::Normal(_) => self.fmt_header_normal(f),
-            device::HeaderType::Bridge(bridge) => self.fmt_header_bridge(f, bridge),
-            device::HeaderType::Cardbus(cardbus) => self.fmt_header_cardbus(f, cardbus),
+            HeaderType::Normal(_) => self.fmt_header_normal(f),
+            HeaderType::Bridge(bridge) => self.fmt_header_bridge(f, bridge),
+            HeaderType::Cardbus(cardbus) => self.fmt_header_cardbus(f, cardbus),
             _ => Ok(()),
         }
     }
@@ -686,7 +686,7 @@ impl<'a> View<Device, &'a ViewArgs<'a>> {
             ref address,
             ref resource,
             header:
-                device::Header {
+                Header {
                     ref header_type,
                     command:
                         Command {

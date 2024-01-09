@@ -1,10 +1,11 @@
 //! PCI IDs Database parser
 
-use core::iter::FromIterator;
-use core::num::ParseIntError;
-use core::str;
-use core::str::FromStr;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    iter::FromIterator,
+    num::ParseIntError,
+    str::{self, FromStr},
+};
 
 use thiserror::Error;
 

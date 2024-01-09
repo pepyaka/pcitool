@@ -1,17 +1,17 @@
-use std::{io, iter, path::PathBuf, collections::HashMap};
+use std::{collections::HashMap, io, iter, path::PathBuf};
 
 use thiserror::Error;
 
 use crate::device::{address::ParseAddressError, Address, Device};
 
-use dump::{Dump, DumpError};
-use linux_procfs::LinuxProcfs;
-use linux_sysfs::LinuxSysfs;
-
-//pub mod dev_port;
 pub mod dump;
+use dump::{Dump, DumpError};
+
 pub mod linux_procfs;
+use linux_procfs::LinuxProcfs;
+
 pub mod linux_sysfs;
+use linux_sysfs::LinuxSysfs;
 
 #[derive(Debug, Error)]
 pub enum AccessError {

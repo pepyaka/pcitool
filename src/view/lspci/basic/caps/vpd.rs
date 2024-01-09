@@ -91,24 +91,38 @@ impl<'a> fmt::Display for Simple<VpdRoResource<'a>> {
             ),
             Unknown { k0, k1, data, .. } => match (k0, k1) {
                 /* Non-standard extensions */
-                ('C', 'C') => writeln!(f, "[CC] CCIN: {}", String::from_utf8_lossy(data)),
-                ('F', 'C') => writeln!(f, "[FC] Feature code: {}", String::from_utf8_lossy(data)),
-                ('F', 'N') => writeln!(f, "[FN] FRU: {}", String::from_utf8_lossy(data)),
-                ('N', 'A') => {
+                (67 /* C */, 67 /* C */) => {
+                    writeln!(f, "[CC] CCIN: {}", String::from_utf8_lossy(data))
+                }
+                (70 /* F */, 67 /* C */) => {
+                    writeln!(f, "[FC] Feature code: {}", String::from_utf8_lossy(data))
+                }
+                (70 /* F */, 78 /* N */) => {
+                    writeln!(f, "[FN] FRU: {}", String::from_utf8_lossy(data))
+                }
+                (78 /* N */, 65 /* A */) => {
                     writeln!(f, "[NA] Network address: {}", String::from_utf8_lossy(data))
                 }
-                ('R', 'M') => writeln!(
+                (82 /* R */, 77 /* M */) => writeln!(
                     f,
                     "[RM] Firmware version: {}",
                     String::from_utf8_lossy(data)
                 ),
-                ('Z', k1) => writeln!(
+                (90 /* Z */, k1) => writeln!(
                     f,
                     "[Z{}] Product specific: {}",
-                    k1,
+                    k1 as char,
                     String::from_utf8_lossy(data)
                 ),
-                (k0, k1) => writeln!(f, "[{}{}] Unknown: {:?}", k0, k1, data),
+                (k0, k1) => writeln!(
+                    f,
+                    "[{}] Unknown: {}",
+                    VpdBytes(&[k0, k1]),
+                    data.iter()
+                        .map(|b| format!("{:02x} ", b))
+                        .collect::<String>()
+                        .trim()
+                ),
             },
         }
     }
@@ -135,13 +149,22 @@ struct VpdStr<'a>(&'a str);
 
 impl<'a> fmt::Display for VpdStr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", VpdBytes(self.0.as_bytes()))
+    }
+}
+
+struct VpdBytes<'a>(&'a [u8]);
+
+impl<'a> fmt::Display for VpdBytes<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.0.is_empty() {
-            for ch in self.0.chars() {
-                match ch as u8 {
-                    0 => (),
-                    92 => write!(f, "\\\\")?,
+            let mut chars = self.0.iter().peekable();
+            while let Some(ch) = chars.next() {
+                match ch {
+                    0 if chars.peek().is_none() => (),
+                    92 => write!(f, "\\\\")?, // '\\' - symbol
                     ch @ (0..=31 | 127) => write!(f, "\\x{:02x}", ch)?,
-                    _ => write!(f, "{}", ch)?,
+                    _ => write!(f, "{}", *ch as char)?,
                 }
             }
         }

@@ -1,4 +1,10 @@
-use core::{
+/*!
+# Device address
+
+In order to access the configuration address space of a device, the devices
+must be addressable.
+*/
+use std::{
     fmt::{self, Display},
     num::ParseIntError,
     str::FromStr,
@@ -6,12 +12,12 @@ use core::{
 
 use thiserror::Error;
 
-
+/// Device address
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub struct Address {
-    /// DOMAIN/SEGMENT is primarily a PLATFORM level construct. Logically, DOMAIN is the most
+    /// *domain*/*segment* is primarily a *platform* level construct. Logically, *domain* is the most
     /// significant selector (most significant address bits selector) in the
-    /// DOMAIN:Bus:Device:Function:Offset addressing scheme of the PCI Family Configuration Space
+    /// *Domain*:Bus:Device:Function:Offset addressing scheme of the PCI Family Configuration Space
     /// addressing mechanism.
     pub domain: u16,
     /// The PCI specification permits a single system to host up to 256 buses
@@ -23,6 +29,7 @@ pub struct Address {
     pub function: u8,
 }
 
+/// Address string parsing errors
 #[derive(Error, Clone, Eq, PartialEq, Debug)]
 pub enum ParseAddressError {
     #[error("empty string")]
@@ -55,6 +62,7 @@ impl Display for Address {
         }
     }
 }
+
 impl FromStr for Address {
     type Err = ParseAddressError;
 

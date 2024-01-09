@@ -8,14 +8,12 @@ edition = "2021"
 clap = { version = "3.2.20", features = ["derive"], optional = true }
 thiserror = "1.0"
 lazy_static = "1.4.0"
-displaydoc = "0.2.2"
 heterob = "0.3.0"
 # pcics = { path = "../pcics" }
 pcics = "0.3.1"
 walkdir = "2.3.2"
 glob = "0.3.0"
 uname = "0.1.1"
-cfg-if = "1.0.0"
 libc = "0.2.134"
 
 [dev-dependencies]

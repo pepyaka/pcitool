@@ -1,31 +1,22 @@
-//! PCI configuration space is the underlying way that the Conventional PCI, PCI-X and PCI Express
-//! perform auto configuration of the cards inserted into their bus.
-//!
+/*!
+# PCI Device
 
-use core::cmp::Ordering;
-use std::array::TryFromSliceError;
-use std::num::ParseIntError;
-use std::slice::SliceIndex;
-use std::str::FromStr;
+*/
 
-use displaydoc::Display;
+use std::{
+    array::TryFromSliceError, cmp::Ordering, num::ParseIntError, slice::SliceIndex, str::FromStr,
+};
+
 use heterob::Seq;
 
 pub mod address;
 pub use address::Address;
 
-pub use pcics::header::{self, Header, HeaderType};
-use pcics::header::{BaseAddress, BaseAddressType, Bridge, Cardbus, Normal};
-// pub mod header;
-// pub use header::{Header, HeaderType};
-
-pub use pcics::capabilities::{self, Capabilities};
-// pub mod capabilities;
-// pub use capabilities::Capabilities;
-
-pub use pcics::extended_capabilities::{self, ExtendedCapabilities};
-// pub mod extended_capabilities;
-// pub use extended_capabilities::ExtendedCapabilities;
+use pcics::{
+    capabilities::Capabilities,
+    extended_capabilities::ExtendedCapabilities,
+    header::{BaseAddress, BaseAddressType, Bridge, Cardbus, Header, HeaderType, Normal},
+};
 
 /// Device dependent region starts at 0x40 offset
 pub const DDR_OFFSET: usize = 0x40;
@@ -35,6 +26,7 @@ pub const ECS_OFFSET: usize = 0x100;
 const DDR_LENGTH: usize = ECS_OFFSET - DDR_OFFSET;
 const ECS_LENGTH: usize = 4096 - ECS_OFFSET;
 
+/// Device
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
     pub address: Address,
@@ -220,28 +212,8 @@ impl TryFrom<&[u8]> for ConfigurationSpace {
     }
 }
 
-#[derive(Display, Debug, Clone, PartialEq, Eq)]
-pub enum ConfigurationSpaceSize {
-    /// 64-bytes predefined header region
-    Header = 64,
-    /// 256-bytes device dependent region
-    DeviceDependentRegion = 256,
-    /// 4096-bytes extended configuration space
-    ExtendedConfigurationSpace = 4096,
-}
-
-impl From<usize> for ConfigurationSpaceSize {
-    fn from(size: usize) -> Self {
-        match size {
-            0..=63 => Self::Header,
-            64..=255 => Self::DeviceDependentRegion,
-            _ => Self::ExtendedConfigurationSpace,
-        }
-    }
-}
-
-/// Sysfs `/sys/bus/pci/devices/*/resource` file support
-#[derive(Display, Debug, Clone, PartialEq, Eq, Default)]
+/// Sysfs `/sys/bus/pci/devices/*/resource` files support
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Resource {
     pub entries: [ResourceEntry; 6],
     pub rom_entry: ResourceEntry,
@@ -261,7 +233,8 @@ impl FromStr for Resource {
     }
 }
 
-#[derive(Display, Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Entry (line) of `/sys/bus/pci/devices/*/resource` files
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ResourceEntry {
     pub start: u64,
     pub end: u64,

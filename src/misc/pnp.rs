@@ -253,8 +253,8 @@ impl<'a> Iterator for VitalProductDataRo<'a> {
                 VpdRoResource::ChecksumAndReserved { checksum, reserved }
             }
             (k0, k1) => VpdRoResource::Unknown {
-                k0,
-                k1,
+                k0: k0 as u8,
+                k1: k1 as u8,
                 len: len as u8,
                 data,
             },
@@ -291,8 +291,8 @@ pub enum VpdRoResource<'a> {
     ChecksumAndReserved { checksum: u8, reserved: &'a [u8] },
     /// Unknown
     Unknown {
-        k0: char,
-        k1: char,
+        k0: u8,
+        k1: u8,
         len: u8,
         data: &'a [u8],
     },

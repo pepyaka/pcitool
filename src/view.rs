@@ -1,8 +1,8 @@
-use core::fmt;
+use std::fmt;
 
 pub mod lspci;
 
-/// Struct that has arbitrary [Display] implementations
+/// Struct that has arbitrary [fmt::Display] implementations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MultiView<T, V> {
     pub data: T,

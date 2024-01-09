@@ -1,15 +1,20 @@
-use core::str::FromStr;
-use std::fs;
-use std::iter::{Enumerate, Peekable};
-use std::num::ParseIntError;
-use std::path::PathBuf;
-use std::str::Lines;
+use std::{
+    fs,
+    iter::{Enumerate, Peekable},
+    num::ParseIntError,
+    path::PathBuf,
+    str::{FromStr, Lines},
+};
 
 use thiserror::Error;
 
-use crate::access::AccessMethod;
-use crate::device::{address::ParseAddressError, Address, Device};
-use crate::device::{ConfigurationSpace, DeviceDependentRegion, ExtendedConfigurationSpace};
+use crate::{
+    access::AccessMethod,
+    device::{
+        address::ParseAddressError, Address, ConfigurationSpace, Device, DeviceDependentRegion,
+        ExtendedConfigurationSpace,
+    },
+};
 
 use super::AccessError;
 
